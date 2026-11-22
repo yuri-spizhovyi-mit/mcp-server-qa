@@ -5,11 +5,11 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**4 requirements, 4 traced: 13 requirement-test links.**
+**5 requirements, 5 traced: 17 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
-| Environment | 4 | 13 | 2 |
+| Environment | 5 | 17 | 3 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -17,3 +17,4 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | ENV-02 | high | mcpqa never imports or depends on energy_mcp: the reusable suite sees only what any MCP server exposes. | `test_mcpqa_never_imports_or_depends_on_energy_mcp` |
 | ENV-03 | medium | Installed versions equal the exact pins in requirements.txt, and the MCP SDK is 2.3.0 with the v2 API (MCPServer, Client) this plan is written against. | `test_installed_versions_match_pins` |
 | ENV-04 | high | Traceability: every test cites a catalogued requirement, every catalogued requirement has a test, catalogue IDs are unique and well-formed, and docs/rtm.* is current (CRLF checkouts and BOM catalogues included). | `test_complete_repo_has_no_problems`<br>`test_test_without_req_is_reported`<br>`test_uncatalogued_id_is_reported`<br>`test_requirement_without_test_is_reported`<br>`test_stale_matrix_is_reported`<br>`test_crlf_checkout_is_not_stale`<br>`test_catalogue_with_bom_is_read`<br>`test_duplicate_and_malformed_ids_are_reported`<br>`test_subfolder_class_and_async_tests_are_traced`<br>`test_this_repo_traceability_is_complete` |
+| ENV-05 | high | CI runs the full suite on Ubuntu and Windows with Python 3.12, installs the exact pins, has read-only permissions and never references a secret; repo text files are LF. | `test_ci_runs_on_ubuntu_and_windows_with_python_312`<br>`test_ci_installs_pins_and_runs_the_full_suite`<br>`test_ci_has_no_secrets_and_read_only_permissions`<br>`test_repo_text_files_are_lf` |
