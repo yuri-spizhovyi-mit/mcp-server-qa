@@ -2,3 +2,4 @@ id,area,risk,requirement
 ENV-01,Environment,medium,"energy_mcp and mcpqa are separate distributions (energy-mcp, mcpqa), each with its own pyproject.toml, installed editable from their src folders in this repo."
 ENV-02,Environment,high,"mcpqa never imports or depends on energy_mcp: the reusable suite sees only what any MCP server exposes."
 ENV-03,Environment,medium,"Installed versions equal the exact pins in requirements.txt, and the MCP SDK is 2.3.0 with the v2 API (MCPServer, Client) this plan is written against."
+ENV-04,Environment,high,"Traceability: every test cites a catalogued requirement, every catalogued requirement has a test, catalogue IDs are unique and well-formed, and docs/rtm.* is current (CRLF checkouts and BOM catalogues included)."
