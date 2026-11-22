@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Keep the job id and name stable: they are meant to be required status checks.
+  # No step has access to a secret: model calls in CI use the scripted and replay
+  # providers only (CLAUDE.md). Both OSes run, because path handling and stdio
+  # subprocesses differ between Windows and Linux (ENV-05).
+  tests:
+    name: tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install pinned dependencies and both packages
+        run: python -m pip install -r requirements.txt
+
+      - name: Tests (includes the traceability check, ENV-04)
+        run: python -m pytest

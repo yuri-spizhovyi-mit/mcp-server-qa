@@ -1,0 +1,7 @@
+# Python 3.12, exact pins of direct dependencies (ENV-D1).
+mcp==2.3.0
+pytest==9.2.0
+pytest-timeout==2.4.0
+pyyaml==6.0.4
+-e ./energy_mcp
+-e ./mcpqa
