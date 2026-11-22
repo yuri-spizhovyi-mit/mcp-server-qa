@@ -62,18 +62,17 @@ def links(root: Path) -> tuple[dict[str, list[str]], list[str]]:
         for req in dict.fromkeys(ids):
             found[req].append(test_id)
 
-    for path in sorted((root / "tests").rglob("test_*.py")):
-        prefix = path.relative_to(root).as_posix()
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        module = _pytestmark(tree.body)
-        for node in tree.body:
+    def scan(body, prefix: str, inherited: list[str]) -> None:
+        for node in body:
             if isinstance(node, TestDef) and node.name.startswith("test_"):
-                record(f"{prefix}::{node.name}", _req_ids(node.decorator_list) or module)
+                record(f"{prefix}::{node.name}", _req_ids(node.decorator_list) or inherited)
             elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
-                cls = _req_ids(node.decorator_list) or _pytestmark(node.body) or module
-                for item in node.body:
-                    if isinstance(item, TestDef) and item.name.startswith("test_"):
-                        record(f"{prefix}::{node.name}::{item.name}", _req_ids(item.decorator_list) or cls)
+                marks = _req_ids(node.decorator_list) or _pytestmark(node.body) or inherited
+                scan(node.body, f"{prefix}::{node.name}", marks)
+
+    for path in sorted((root / "tests").rglob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        scan(tree.body, path.relative_to(root).as_posix(), _pytestmark(tree.body))
     return found, untraced
 
 

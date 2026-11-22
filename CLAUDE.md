@@ -8,7 +8,7 @@ protocol, keeps its tool contracts, resists attacks, and works for an agent that
 **The test suite is the product.** Part of it (`mcpqa`) is reusable against any MCP server.
 
 Portfolio and learning project. Roadmap, milestones and definition of done:
-[`docs/plan.md`](docs/plan.md). Until that plan is approved, no code is written.
+[`docs/plan.md`](docs/plan.md) (approved 2026-11-22). A change of scope goes into the plan first.
 
 ## Hard constraints
 

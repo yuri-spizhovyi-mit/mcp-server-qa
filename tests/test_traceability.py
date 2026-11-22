@@ -112,6 +112,42 @@ def test_subfolder_class_and_async_tests_are_traced(tmp_path: Path) -> None:
     assert untraced == []
 
 
+def test_nested_test_classes_are_traced(tmp_path: Path) -> None:
+    nested = ('import pytest\n\nclass TestOuter:\n    class TestInner:\n'
+              '        @pytest.mark.req("ENV-01")\n        def test_n(self):\n            pass\n')
+    root = make_repo(tmp_path, [("ENV-01", "low")], {"test_n.py": nested})
+    assert rtm.links(root)[0]["ENV-01"] == ["tests/test_n.py::TestOuter::TestInner::test_n"]
+
+
+CONFTEST = Path(__file__).with_name("conftest.py")
+
+
+def _gated_run(pytester: pytest.Pytester, files: dict[str, str]) -> pytest.RunResult:
+    """Run pytest in a throwaway repo that uses this repo's collection gate (tests/conftest.py)."""
+    pytester.makefile(".ini", pytest="[pytest]\nmarkers =\n    req(id): requirement\n")
+    for relpath, source in {"conftest.py": CONFTEST.read_text(encoding="utf-8"), **files}.items():
+        path = pytester.path / "tests" / relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+    return pytester.runpytest("tests")
+
+
+def test_collected_test_without_req_fails_the_run(pytester: pytest.Pytester) -> None:
+    result = _gated_run(pytester, {"test_a.py": "def test_x():\n    pass\n"})
+    assert result.ret != 0
+    result.stderr.fnmatch_lines(["*tests/test_a.py::test_x has no req marker*"])
+
+
+@pytest.mark.parametrize(("relpath", "source"), [
+    ("loop_test.py", CITES_ENV_01),  # pytest's default python_files includes *_test.py
+    ("test_a.py", CITES_ENV_01.replace("def test_x", "def testx")),  # pytest's prefix is `test`
+], ids=["star_test_file", "test_prefix_without_underscore"])
+def test_test_that_rtm_cannot_see_fails_the_run(pytester: pytest.Pytester, relpath: str, source: str) -> None:
+    result = _gated_run(pytester, {relpath: source})
+    assert result.ret != 0
+    result.stderr.fnmatch_lines(["*is collected by pytest but invisible to scripts/rtm.py*"])
+
+
 def test_this_repo_traceability_is_complete() -> None:
     problems = rtm.check(rtm.ROOT)
     assert problems == [], "\n".join(problems)
