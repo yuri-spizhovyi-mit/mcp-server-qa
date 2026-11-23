@@ -76,3 +76,16 @@ def http_server(port: int, timeout: float = 20.0) -> Iterator[str]:
             proc.kill()
             proc.wait()
         proc.stderr.close()
+
+
+class ManualClock:
+    """Epoch seconds that move only when a test says so; starts 2026-01-12T09:00:00Z (auth and rate limits)."""
+
+    def __init__(self, start: float = 1768208400.0) -> None:
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds

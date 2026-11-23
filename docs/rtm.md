@@ -5,13 +5,13 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**16 requirements, 16 traced: 62 requirement-test links.**
+**16 requirements, 16 traced: 66 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
 | Server | 8 | 38 | 5 |
-| Auth | 3 | 4 | 2 |
+| Auth | 3 | 8 | 2 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -28,6 +28,6 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | SRV-05 | medium | The reports://{name} template and each report are listed; a report reads back as its file text with text/markdown; an unknown or malformed name is -32602 without echoing it; the report files ship inside the package. | `test_reports_are_listed`<br>`test_report_reads_back_its_file`<br>`test_unknown_or_malformed_report_is_invalid_params`<br>`test_report_errors_never_echo_the_name`<br>`test_reports_ship_inside_the_package` |
 | SRV-07 | high | The server runs over stdio and Streamable HTTP (main() binds 127.0.0.1 unless --host says otherwise); on both transports and both revisions it lists the same tools, answers a valid call with schema-valid output, a bad argument with isError, and an unknown tool with -32602. | `test_cli_defaults_to_stdio_and_localhost`<br>`test_cli_serves_http_on_localhost_unless_told`<br>`test_transport_behaves_like_in_process` |
 | SRV-08 | medium | A real Claude client connects to the server over stdio and calls a tool: a recorded Claude Code transcript in docs/evidence/ shows the MCP tool call and the server's answer for the seeded world, and holds nothing private. | `test_recorded_claude_run_called_the_server_over_mcp`<br>`test_a_run_that_bypassed_mcp_is_rejected`<br>`test_evidence_is_listed_and_holds_nothing_private`<br>`test_readme_desktop_config_is_valid_json` |
-| AUTH-01 | high | A bearer token is accepted only when it is an RS256 at+jwt signed by the configured key, with the configured issuer and audience, every RFC 9068 required claim, exp/iat/nbf valid on the server's clock without leeway, and well-formed sub and client_id; anything else, including garbage, is rejected without an exception. | `test_f09_sdk_checks_expiry_on_the_wall_clock` |
+| AUTH-01 | high | A bearer token is accepted only when it is an RS256 at+jwt signed by the configured key, with the configured issuer and audience, every RFC 9068 required claim, exp/iat/nbf valid on the server's clock without leeway, and well-formed sub and client_id; anything else, including garbage, is rejected without an exception. | `test_f09_sdk_checks_expiry_on_the_wall_clock`<br>`test_valid_token_is_accepted`<br>`test_bad_tokens_are_rejected`<br>`test_audience_list_with_us_is_accepted`<br>`test_expiry_follows_the_injected_clock` |
 | AUTH-02 | high | Over HTTP, a request without a usable bearer token gets 401 with WWW-Authenticate: Bearer carrying resource_metadata and scope; a missing token has no error code, an invalid or expired one has error="invalid_token"; a call without its scope gets 403 insufficient_scope with the needed scope and resource_metadata; challenges never carry caller text. | `test_f10_sdk_missing_token_says_invalid_token`<br>`test_f11_sdk_challenges_carry_no_scope` |
 | AUTH-03 | medium | RFC 9728 metadata is served without auth at /.well-known/oauth-protected-resource/mcp with resource, authorization_servers = [issuer], scopes_supported = the four base scopes and bearer_methods_supported = [header]. | `test_f12_sdk_metadata_scopes_are_the_required_scopes` |
