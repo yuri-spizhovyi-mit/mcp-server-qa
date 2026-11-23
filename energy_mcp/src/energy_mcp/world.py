@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -53,6 +54,7 @@ class World:
     readings: dict[str, list[Reading]]
     alerts: list[Alert]
     _index: dict[str, int] = field(init=False, repr=False)
+    _lock: threading.Lock = field(init=False, repr=False, compare=False, default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         self._index = {a.alert_id: i for i, a in enumerate(self.alerts)}
@@ -75,11 +77,13 @@ class World:
     def acknowledge(self, alert_id: str, by: str, at: str) -> Alert:
         """Acknowledge an alert; a second call returns the first acknowledgement unchanged (SRV-D3)."""
         i = self._index[alert_id]  # KeyError for an unknown alert
-        alert = self.alerts[i]
-        if alert.status == "acknowledged":
-            return alert
-        self.alerts[i] = alert.model_copy(update={"status": "acknowledged", "acknowledged_by": by, "acknowledged_at": at})
-        return self.alerts[i]
+        with self._lock:  # sync tools run in worker threads: read and write as one step
+            alert = self.alerts[i]
+            if alert.status == "acknowledged":
+                return alert
+            self.alerts[i] = alert.model_copy(
+                update={"status": "acknowledged", "acknowledged_by": by, "acknowledged_at": at})
+            return self.alerts[i]
 
 
 def build_world(seed: int = 42) -> World:

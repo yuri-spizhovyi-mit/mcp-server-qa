@@ -6,9 +6,11 @@ import os
 import re
 import subprocess
 import sys
+import threading
 
 import pytest
 
+from energy_mcp.models import Alert
 from energy_mcp.world import GENERIC_SITE_NOUNS, build_world
 
 pytestmark = pytest.mark.req("SRV-01")
@@ -62,3 +64,34 @@ def test_acknowledge_is_idempotent_and_unknown_raises() -> None:
     assert again == first and w.alert(alert.alert_id) == first
     with pytest.raises(KeyError):
         w.acknowledge("ALR-0999", by="op-1", at="2026-01-12T09:00:00Z")
+
+
+@pytest.mark.req("SRV-03")
+def test_concurrent_acknowledge_records_one_operator(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sync tools run in worker threads: two acknowledgements at once must not both write.
+
+    The patched copy waits until both threads are inside it. Without the lock both get there
+    and each writes its own operator; with the lock the second waits outside, the barrier
+    times out, and the second call then finds the alert already acknowledged.
+    """
+    w = build_world()
+    alert_id = next(a.alert_id for a in w.alerts if a.status == "open")
+    barrier = threading.Barrier(2, timeout=1)
+    real_copy = Alert.model_copy
+
+    def slow_copy(self: Alert, *args: object, **kwargs: object) -> Alert:
+        try:
+            barrier.wait()
+        except threading.BrokenBarrierError:
+            pass
+        return real_copy(self, *args, **kwargs)
+
+    monkeypatch.setattr(Alert, "model_copy", slow_copy)
+    results = {}
+    threads = [threading.Thread(target=lambda op=op: results.__setitem__(op, w.acknowledge(alert_id, by=op, at="t")))
+               for op in ("op-A", "op-B")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert results["op-A"] == results["op-B"] == w.alert(alert_id)

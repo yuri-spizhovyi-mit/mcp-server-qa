@@ -89,3 +89,11 @@ class ManualClock:
 
     def advance(self, seconds: float) -> None:
         self.now += seconds
+
+
+def writer() -> Any:
+    """An in-process caller that may acknowledge any alert (the default identity is read-only, AUTH-D3)."""
+    from energy_mcp.access import Identity
+    from energy_mcp.scopes import READ_SCOPES
+
+    return Identity("op-1", READ_SCOPES | {"alerts:write"})

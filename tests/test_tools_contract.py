@@ -8,7 +8,7 @@ import pytest
 
 from energy_mcp.server import TOOL_NAMES, build_server
 from energy_mcp.world import build_world
-from servers import MODES, connect, validate
+from servers import MODES, connect, validate, writer
 
 pytestmark = [pytest.mark.req("SRV-02"), pytest.mark.anyio, pytest.mark.parametrize("mode", MODES)]
 
@@ -34,7 +34,7 @@ async def test_every_tool_output_matches_its_output_schema(mode: str) -> None:
         "acknowledge_alert": {"alert_id": first_open},
     }
     assert set(calls) == set(TOOL_NAMES)
-    async with connect(build_server(world), mode) as client:
+    async with connect(build_server(world, identity=writer()), mode) as client:
         schemas = {t.name: t.output_schema for t in (await client.list_tools()).tools}
         for name, arguments in calls.items():
             result = await client.call_tool(name, arguments)

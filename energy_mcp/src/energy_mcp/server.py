@@ -27,8 +27,10 @@ from mcp_types.jsonrpc import INTERNAL_ERROR, INVALID_PARAMS
 from pydantic import Field
 
 from energy_mcp import __version__
+from energy_mcp.access import Identity, ScopeGuard, current_identity
 from energy_mcp.guard import ArgumentGuard
 from energy_mcp.models import Alert, AlertList, MeterList, ReadingPage
+from energy_mcp.scopes import READ_SCOPES
 from energy_mcp.world import TIME_FORMAT, World, build_world
 
 logger = logging.getLogger("energy_mcp")
@@ -84,7 +86,7 @@ def _offset(cursor: str, meter_id: str, size: int) -> int:
     return offset
 
 
-def _tools(world: World, clock: Callable[[], datetime], operator: str) -> list[Tool]:
+def _tools(world: World, clock: Callable[[], datetime], identity: Identity) -> list[Tool]:
     def list_meters(site_id: SiteId | None = None) -> MeterList:
         return MeterList(meters=[m for m in world.meters if site_id is None or m.site_id == site_id])
 
@@ -107,6 +109,7 @@ def _tools(world: World, clock: Callable[[], datetime], operator: str) -> list[T
     def acknowledge_alert(alert_id: AlertId) -> Alert:
         if world.alert(alert_id) is None:
             raise ToolError(f"Unknown alert {alert_id}")
+        operator = current_identity(identity).operator  # the token's sub over HTTP (AUTH-08)
         return world.acknowledge(alert_id, by=operator, at=clock().strftime(TIME_FORMAT))
 
     # Patterns and ranges are published in each inputSchema and enforced by the guard.
@@ -133,12 +136,14 @@ def _tools(world: World, clock: Callable[[], datetime], operator: str) -> list[T
 
 
 def build_server(world: World | None = None, *, clock: Callable[[], datetime] = utc_now,
-                 operator: str = "local-operator") -> MCPServer:
+                 identity: Identity = Identity("local-operator", READ_SCOPES)) -> MCPServer:
+    """`identity` is the caller when no token is present: stdio and in-process (AUTH-D3)."""
     world = build_world() if world is None else world
-    tools = _tools(world, clock, operator)
+    tools = _tools(world, clock, identity)
     assert tuple(t.name for t in tools) == TOOL_NAMES
     guard = ArgumentGuard({t.name: t.parameters for t in tools}, PROMPT_ARGS)
-    server = MCPServer("energy-mcp", version=__version__, tools=tools, middleware=[guard])
+    # The first middleware is the outermost: scopes are checked before arguments.
+    server = MCPServer("energy-mcp", version=__version__, tools=tools, middleware=[ScopeGuard(identity), guard])
     _add_reports(server)
     _add_prompt(server, world)
     return server
