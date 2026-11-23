@@ -33,6 +33,9 @@ BAD = {
     "expired": lambda i: i.mint(now=JANUARY - 3600, ttl=3600),  # exp == now
     "not-yet-valid": lambda i: i.mint(nbf=int(JANUARY) + 1),
     "issued-in-future": lambda i: i.mint(iat=int(JANUARY) + 1),
+    "exp-infinity": lambda i: i.mint(exp=float("inf")),  # signed by the issuer, still must not crash
+    "iat-nan": lambda i: i.mint(iat=float("nan")),
+    "exp-string": lambda i: i.mint(exp="2030-01-01"),
     "wrong-audience": lambda i: i.mint(aud="http://127.0.0.1:9000/mcp"),
     "audience-list-without-us": lambda i: i.mint(aud=["http://other.test/mcp", "http://127.0.0.1:8000/"]),
     "wrong-issuer": lambda i: i.mint(iss="https://evil.test"),

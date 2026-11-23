@@ -7,6 +7,7 @@ never from PyJWT's own wall-clock checks, so tests can drive expiry (F-09).
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -60,6 +61,6 @@ class JwtVerifier:
         """exp > now, iat <= now, nbf <= now when present; no leeway: the clock is ours."""
         now = self.clock()
         times = [claims[c] for c in ("exp", "iat", "nbf") if c in claims]
-        if not all(isinstance(t, int | float) and not isinstance(t, bool) for t in times):
+        if not all(isinstance(t, int | float) and not isinstance(t, bool) and math.isfinite(t) for t in times):
             return False
         return claims["exp"] > now and claims["iat"] <= now and claims.get("nbf", now) <= now
