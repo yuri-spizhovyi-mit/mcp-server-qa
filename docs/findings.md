@@ -87,3 +87,16 @@ Entry format:
 - Status: fixed in the M1 PR. Forged out-of-range cursors were added, a new test
   (`test_cli_serves_http_on_localhost_unless_told`) checks what `main()` hands the SDK, and
   the world test picks the first open alert. Each fix was shown to fail on its mutant.
+
+## F-08: A screenshot of the right answer did not prove the tool was called (a harness bug)
+- Found by: checking the first SRV-08 screenshot before committing it.
+- Evidence: the screenshot showed Claude Code answering "SITE-02 (Pump House 2) has three
+  meters" with the right table, but in the same session Claude wrote "No energy-mcp tools are
+  connected to this session" and got the table by running the server through shell commands.
+  The server had not been registered with Claude Code yet. A picture of the answer looked
+  like success; only the tool calls showed it was not.
+- Status: fixed in the M1 PR. The evidence is now a recorded Claude Code run (stream-json,
+  trimmed), and `tests/test_evidence.py` scores it on the tool calls: it requires a
+  `mcp__energy-mcp__list_meters` call and the server's own result for the seeded world.
+  `test_a_run_that_bypassed_mcp_is_rejected` replays the screenshot's case and fails it.
+  This is CLAUDE.md's "score the world, not the words" applied to our own evidence.

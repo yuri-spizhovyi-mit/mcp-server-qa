@@ -43,4 +43,4 @@ add the server and restart the app:
 }
 ```
 
-The M1 screenshot of such a run is in [docs/evidence/](docs/evidence/).
+A recorded run (Claude Code calling `list_meters` over stdio) is in [docs/evidence/](docs/evidence/m1-claude-stdio.md).
