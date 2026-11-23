@@ -126,6 +126,49 @@ Entry format:
   `tests/test_http_auth.py::test_every_path_but_metadata_needs_a_token`,
   `tests/test_rate_limit.py::test_call_n_plus_one_is_429_and_resets_on_the_clock`
 
+## PROTO-D1: What must a server answer for an unsupported protocol version (2026-07-28)?
+- Decision: `mcpqa`'s check requires all of these:
+  - error `-32022`;
+  - `data.requested` equal to the version sent;
+  - `data.supported` a non-empty list that contains `2026-07-28` and only versions the server
+    accepts;
+  - HTTP 400 over HTTP.
+
+  It does not require `2025-11-25` in the list.
+- Why: the spec says the server MUST answer `-32022` "listing the versions it does support".
+  Its example lists both revisions, but mcp 2.3.0 lists only the revision of the request's
+  own style, while still serving `2025-11-25` through `initialize`. Requiring the older
+  version would fail every server built on this SDK over an example, not a rule.
+- Held by: (M3a Task 4)
+
+## PROTO-D2: What must a 2025-11-25 server answer to `initialize` with a version it doesn't support?
+- Decision: a result whose `protocolVersion` is a version the server serves. An error fails
+  the check, and so does an echo of the unknown version.
+- Why: the lifecycle page says the server "MUST respond with another protocol version it
+  supports". An echo would let a client believe both sides agree on a version neither
+  implements.
+- Held by: (M3a Task 4)
+
+## PROTO-D3: How is a target named?
+- Decision: `--target` takes one of three forms:
+  - `stdio:` plus a JSON array, which is the exact argv;
+  - `stdio:` plus a command split with `shlex` (POSIX rules);
+  - an `http://` or `https://` URL.
+
+  A bearer token comes from the environment variable that `--token-env` names.
+- Why: Windows paths have backslashes and spaces, which shell splitting mangles, while a JSON
+  array is exact on every OS. Tokens never go on a command line, where they end up in shell
+  history and CI logs.
+- Held by: (M3a Task 3)
+
+## PROTO-D4: What does `energy_mcp` answer to a malformed stdio line?
+- Decision: `-32700` for a line that isn't JSON, with `id: null`. Anything else that isn't
+  a valid message gets `-32600`, with the message's `id` when it is an integer or string,
+  else `null`.
+- Why: JSON-RPC 2.0 says to reply, and to use `null` only when the id can't be read. An
+  answer tells the client which line was bad; silence only makes it wait (F-13).
+- Held by: (M3a Task 2)
+
 ## SRV-D1: What does a call with arguments that break the tool's schema return?
 - Decision: a tool execution error (`isError: true`), as the spec lists input validation
   errors. The text is `Invalid arguments for tool <name>: <path>: <rule>; ...`. It names the

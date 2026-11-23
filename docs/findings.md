@@ -136,3 +136,32 @@ Entry format:
   on every request, so a server with per-tool scopes can either publish none or require all
   of them on every call.
 - Status: we serve our own metadata with the four base scopes (AUTH-03).
+
+## F-13: Over stdio, the SDK answers nothing to a malformed message
+- Found by: the M3a spikes (mcp 2.3.0), pinned by
+  `tests/test_sdk_protocol_findings.py::test_f13_bare_stdio_drops_malformed_lines`.
+- Evidence: a line that isn't JSON (`{"jsonrpc":"2.0","id":1,`) or isn't a request
+  (`{"jsonrpc":"2.0","id":2}`) gets no answer at all. The SDK's stdio reader turns the
+  validation error into an exception in the session stream, and the session drops it. The
+  spec defines `-32700` Parse error and `-32600` Invalid Request, and JSON-RPC 2.0 says a
+  server replies with an error whose `id` is `null` when it can't read one. A client that
+  sent a bad line waits until its own timeout and never learns why.
+- Status: worked around in `energy_mcp`. Its stdio front answers `-32700` or `-32600`
+  (PROTO-D4, PROTO-09). Over HTTP, the M2 edge already answers 400 `-32700`.
+
+## F-14: The SDK's list methods ignore a cursor they never issued
+- Found by: the M3a spikes, pinned by `test_f14_bare_list_methods_ignore_a_cursor`.
+- Evidence: `tools/list` and `resources/list` with `cursor: "garbage"` return the first page
+  as if no cursor had been sent, on both revisions and transports. The spec says invalid
+  cursors SHOULD result in `-32602`. A client with a corrupted cursor silently restarts from
+  page one and may loop.
+- Status: worked around in `energy_mcp`. The guard rejects any cursor on a list method with
+  `-32602` "Invalid cursor", since the server never issues one (PROTO-09).
+
+## F-15: The plan named the wrong TypeScript SDK (a plan bug)
+- Found by: checking npm before writing the M3 plan.
+- Evidence: `docs/plan.md` named `@modelcontextprotocol/sdk` 1.32.2 for the interop check. The
+  official `server-everything` 2.3.1 is built on the newer package line
+  (`@modelcontextprotocol/server` 2.x), whose client is `@modelcontextprotocol/client`
+  2.4.0.
+- Status: fixed in the plan. M3b uses `@modelcontextprotocol/client` 2.4.0.

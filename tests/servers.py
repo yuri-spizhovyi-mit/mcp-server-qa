@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import queue
 import socket
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -170,3 +172,53 @@ async def post_call(client: httpx2.AsyncClient, name: str, arguments: Any = None
     """
     body = rpc("tools/call", {"name": name, "arguments": {} if arguments is None else arguments, "_meta": ENVELOPE})
     return await post(client, body, **modern_headers("tools/call", name))
+
+
+class RawStdio:
+    """Raw JSON lines to a subprocess's stdin, answers read from its stdout (for protocol edge cases).
+
+    `read()` returns the next JSON message, or None after `timeout`. Lines on stdout that are not
+    JSON go to `noise`. The process is killed on exit, whatever state it is in.
+    """
+
+    def __init__(self, argv: list[str], env: dict[str, str] | None = None, timeout: float = 5.0) -> None:
+        self.timeout = timeout
+        self.noise: list[str] = []
+        self._lines: queue.Queue[bytes | None] = queue.Queue()
+        self.proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, env=env or get_default_environment())
+        threading.Thread(target=self._pump, daemon=True).start()
+
+    def _pump(self) -> None:
+        for line in self.proc.stdout:
+            self._lines.put(line)
+        self._lines.put(None)
+
+    def send(self, message: Any) -> None:
+        data = message if isinstance(message, bytes) else json.dumps(message).encode()
+        self.proc.stdin.write(data + b"\n")
+        self.proc.stdin.flush()
+
+    def read(self) -> dict | None:
+        deadline = time.monotonic() + self.timeout
+        while (left := deadline - time.monotonic()) > 0:
+            try:
+                line = self._lines.get(timeout=left)
+            except queue.Empty:
+                return None
+            if line is None:
+                return None
+            try:
+                return json.loads(line)
+            except ValueError:
+                self.noise.append(line.decode("utf-8", "replace").rstrip())
+        return None
+
+    def __enter__(self) -> "RawStdio":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.proc.kill()
+        self.proc.wait(timeout=10)
+        for stream in (self.proc.stdin, self.proc.stdout):
+            stream.close()
