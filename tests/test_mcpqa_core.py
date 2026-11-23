@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import httpx2
@@ -12,7 +14,7 @@ import pytest
 
 from mcpqa.protocol import LEGACY, MODERN, Session
 from mcpqa.target import Target, parse_target
-from mcpqa.wire import HttpWire, StdioWire, parse_sse
+from mcpqa.wire import HttpWire, MismatchedReply, StdioWire, parse_sse
 from servers import authenticated_http_server
 
 pytestmark = pytest.mark.req("PROTO-01")
@@ -84,10 +86,13 @@ def test_sse_reply_is_parsed() -> None:
     note = {"jsonrpc": "2.0", "method": "notifications/progress", "params": {}}
     assert parse_sse(sse(one).decode(), 1) == one
     assert parse_sse(sse(note, one).decode(), 1) == one
+    assert parse_sse(sse(note).decode(), 1) is None  # no fallback to an event that isn't the reply
     assert parse_sse("data: {\"jsonrpc\":\"2.0\",\ndata: \"id\":1,\"result\":{}}\n\n", 1) == {
         "jsonrpc": "2.0", "id": 1, "result": {}}  # several data lines are one event
 
-    chunks = [sse(note, one)[:17], sse(note, one)[17:]]
+    blob = sse(note, one)
+    cut = blob.index(b'"result"')
+    chunks = [blob[:cut], blob[cut:]]  # split inside the reply's own data line
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         if json.loads(request.content).get("method") == "notifications/initialized":
@@ -232,3 +237,55 @@ def test_json_that_is_not_a_message_is_noise(tmp_path: Path) -> None:
         reply = wire.exchange({"jsonrpc": "2.0", "id": 3, "method": "x"})
     assert reply.message == {"jsonrpc": "2.0", "id": 3, "result": {}}
     assert wire.noise == ['{"level": "info", "msg": "starting"}', "42"]
+
+
+class _LingeringSSE(BaseHTTPRequestHandler):
+    """Answers at once, then keeps the SSE stream open with comment pings (legal: closing is only a SHOULD)."""
+
+    def do_POST(self) -> None:
+        request = json.loads(self.rfile.read(int(self.headers["content-length"])))
+        self.send_response(200)
+        self.send_header("content-type", "text/event-stream")
+        self.end_headers()
+        self.wfile.write(b"data: " + json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {}}).encode() + b"\n\n")
+        self.wfile.flush()
+        try:
+            for _ in range(40):
+                time.sleep(0.25)
+                self.wfile.write(b": ping\n\n")
+                self.wfile.flush()
+        except OSError:
+            pass  # the client hung up, as it should once it has its reply
+
+    def log_message(self, *args: object) -> None:
+        pass
+
+
+def test_http_reply_is_bounded_even_if_the_stream_stays_open() -> None:
+    """I3a: the reply is taken as soon as it arrives; a total deadline bounds the wait."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _LingeringSSE)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with HttpWire(f"http://127.0.0.1:{server.server_port}/mcp", timeout=2) as wire:
+            started = time.monotonic()
+            reply = wire.exchange({"jsonrpc": "2.0", "id": 4, "method": "tools/list"})
+            elapsed = time.monotonic() - started
+    finally:
+        server.shutdown()
+    assert reply.message == {"jsonrpc": "2.0", "id": 4, "result": {}}
+    assert elapsed < 2, f"took {elapsed:.1f} s"
+
+
+def test_http_reply_with_another_id_is_an_error() -> None:
+    """I3b: a reply must answer the request that was sent."""
+    def wrong_id(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"jsonrpc": "2.0", "id": 99, "result": {}})
+
+    def only_a_notification(request: httpx2.Request) -> httpx2.Response:
+        note = {"jsonrpc": "2.0", "method": "notifications/message", "params": {}}
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=sse(note))
+
+    for handler in (wrong_id, only_a_notification):
+        wire = HttpWire("http://127.0.0.1:8000/mcp", transport=httpx2.MockTransport(handler))
+        with pytest.raises(MismatchedReply):
+            wire.exchange({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})

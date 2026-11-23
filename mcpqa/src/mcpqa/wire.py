@@ -13,7 +13,7 @@ import queue
 import subprocess
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -127,20 +127,36 @@ class StdioWire:
         self.close()
 
 
-def parse_sse(text: str, expected: Any) -> dict[str, Any] | None:
-    """The event whose JSON `id` is `expected`, else the first JSON event (data lines joined by newlines)."""
-    events = []
-    for block in text.replace("\r\n", "\n").split("\n\n"):
-        data = [line[5:].removeprefix(" ") for line in block.split("\n") if line.startswith("data:")]
-        if data:
+class MismatchedReply(Exception):
+    """The server's reply does not answer the request that was sent (another id, or no reply at all)."""
+
+
+def _sse_events(lines: Iterator[str]) -> Iterator[Any]:
+    """Each SSE event's JSON as soon as the event is complete (data lines joined by newlines)."""
+    data: list[str] = []
+    for line in lines:
+        line = line.rstrip("\r")
+        if line.startswith("data:"):
+            data.append(line[5:].removeprefix(" "))
+        elif line == "" and data:
             try:
-                events.append(json.loads("\n".join(data)))
+                yield json.loads("\n".join(data))
             except ValueError:
-                continue
-    for event in events:
-        if isinstance(event, dict) and event.get("id", _NO_ID) == expected and "method" not in event:
+                pass
+            data = []
+    if data:
+        try:
+            yield json.loads("\n".join(data))
+        except ValueError:
+            pass
+
+
+def parse_sse(text: str, expected: Any) -> dict[str, Any] | None:
+    """The event that answers request `expected`, or None: never some other event in its place."""
+    for event in _sse_events(iter(text.replace("\r\n", "\n").split("\n"))):
+        if _matches(event, expected, False):
             return event
-    return events[0] if events else None
+    return None
 
 
 class HttpWire:
@@ -153,26 +169,47 @@ class HttpWire:
 
     def exchange(self, message: dict[str, Any] | bytes, headers: Mapping[str, str] | None = None,
                  accept_null_id: bool = False) -> Reply:
+        """POST one message; read its reply as it streams in, within one total deadline (I3).
+
+        A JSON-RPC reply must answer this request's id (`null` is accepted for malformed sends or
+        when `accept_null_id`); anything else is `MismatchedReply`. A body that isn't JSON-RPC
+        (an OAuth error body, a 202 with nothing) comes back as it is, for the check to judge.
+        """
         body = message if isinstance(message, bytes) else json.dumps(message).encode()
         sent = {"content-type": "application/json", "accept": "application/json, text/event-stream",
                 **self._auth, **self.session_headers, **(headers or {})}
+        expected = _expected_id(message)
+        allow_null = accept_null_id or not isinstance(message, dict)
+        deadline = time.monotonic() + self.timeout
         try:
-            response = self._client.post(self.url, content=body, headers=sent)
+            with self._client.stream("POST", self.url, content=body, headers=sent) as response:
+                status, received = response.status_code, dict(response.headers)
+                if "text/event-stream" in response.headers.get("content-type", ""):
+                    for event in _sse_events(response.iter_lines()):
+                        if expected is not _NO_ID and _matches(event, expected, allow_null):
+                            return Reply(status, event, received)
+                        if time.monotonic() > deadline:
+                            raise TimeoutError(f"no reply from the server within {self.timeout} s")
+                    if expected is _NO_ID:
+                        return Reply(status, None, received)
+                    raise MismatchedReply(f"the event stream ended without a reply to request {expected!r}")
+                chunks = []
+                for chunk in response.iter_bytes():
+                    chunks.append(chunk)
+                    if time.monotonic() > deadline:
+                        raise TimeoutError(f"no complete reply from the server within {self.timeout} s")
         except httpx2.TimeoutException:
             raise TimeoutError(f"no answer from the server within {self.timeout} s") from None
         except httpx2.TransportError as error:
             raise ConnectionError(f"could not reach the server: {type(error).__name__}") from None
-        content_type = response.headers.get("content-type", "")
-        parsed: Any = None
-        if response.content:
-            if "text/event-stream" in content_type:
-                parsed = parse_sse(response.text, _expected_id(message))
-            else:
-                try:
-                    parsed = response.json()
-                except ValueError:
-                    parsed = None
-        return Reply(response.status_code, parsed if isinstance(parsed, dict) else None, dict(response.headers))
+        try:
+            parsed = json.loads(b"".join(chunks)) if chunks else None
+        except ValueError:
+            parsed = None
+        if (expected is not _NO_ID and is_jsonrpc(parsed) and "method" not in parsed
+                and not _matches(parsed, expected, allow_null)):
+            raise MismatchedReply(f"the server answered id {parsed.get('id')!r} to request {expected!r}")
+        return Reply(status, parsed if isinstance(parsed, dict) else None, received)
 
     notify = exchange
 
