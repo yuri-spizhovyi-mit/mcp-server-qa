@@ -212,3 +212,23 @@ def test_shell_form_rejects_windows_backslashes() -> None:
     """I6: shlex drops unquoted backslashes; refuse instead of running a mangled path."""
     with pytest.raises(ValueError, match="JSON array"):
         parse_target(r"stdio:C:\Users\me\python.exe -m energy_mcp")
+
+
+JSON_LOGGER = """
+import json, sys
+print(json.dumps({"level": "info", "msg": "starting"}), flush=True)
+print("42", flush=True)
+for line in sys.stdin:
+    message = json.loads(line)
+    print(json.dumps({"jsonrpc": "2.0", "id": message.get("id"), "result": {}}), flush=True)
+"""
+
+
+def test_json_that_is_not_a_message_is_noise(tmp_path: Path) -> None:
+    """I2: a structured logger writing JSON to stdout breaks stdio as surely as plain text does."""
+    script = tmp_path / "logger.py"
+    script.write_text(JSON_LOGGER, encoding="utf-8")
+    with StdioWire([sys.executable, str(script)], timeout=5) as wire:
+        reply = wire.exchange({"jsonrpc": "2.0", "id": 3, "method": "x"})
+    assert reply.message == {"jsonrpc": "2.0", "id": 3, "result": {}}
+    assert wire.noise == ['{"level": "info", "msg": "starting"}', "42"]

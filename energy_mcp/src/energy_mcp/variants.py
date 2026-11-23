@@ -200,4 +200,8 @@ VARIANTS: dict[str, Variant] = {
     "prints-to-stdout": Variant(
         "a startup line on stdout that is not an MCP message", "PROTO-07",
         frozenset({"test_stdout_carries_only_messages"}), startup_stdout="energy_mcp starting"),
+    "prints-json-to-stdout": Variant(
+        "a structured log line on stdout: valid JSON, but not an MCP message", "PROTO-07",
+        frozenset({"test_stdout_carries_only_messages"}),
+        startup_stdout='{"level": "info", "msg": "energy_mcp starting"}'),
 }

@@ -31,6 +31,13 @@ class Reply:
     headers: Mapping[str, str] = field(default_factory=dict)
 
 
+def is_jsonrpc(message: Any) -> bool:
+    """A JSON-RPC 2.0 request, notification or response, by shape."""
+    if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
+        return False
+    return isinstance(message.get("method"), str) or ("id" in message and ("result" in message or "error" in message))
+
+
 def _expected_id(message: dict[str, Any] | bytes) -> Any:
     return message.get("id", _NO_ID) if isinstance(message, dict) else None
 
@@ -69,7 +76,8 @@ class StdioWire:
             raise ConnectionError(f"the server closed its stdin: {error}") from None
 
     def read(self, deadline: float | None = None) -> dict[str, Any] | None:
-        """The next JSON message on stdout; non-JSON lines go to `noise`."""
+        """The next JSON-RPC message on stdout. Anything else (text, or JSON that isn't a JSON-RPC 2.0
+        object, such as a structured log line) goes to `noise`."""
         deadline = time.monotonic() + self._bound() if deadline is None else deadline
         while (left := deadline - time.monotonic()) > 0:
             try:
@@ -81,9 +89,12 @@ class StdioWire:
                 raise ConnectionError("the server closed its stdout")
             self._startup_left = 0.0  # the process has started: it wrote something
             try:
-                return json.loads(line)
+                message = json.loads(line)
             except ValueError:
-                self.noise.append(line.decode("utf-8", "replace").rstrip("\r\n"))
+                message = None
+            if is_jsonrpc(message):
+                return message
+            self.noise.append(line.decode("utf-8", "replace").rstrip("\r\n"))
         raise TimeoutError(f"no message from the server within {self._bound()} s")
 
     def _bound(self) -> float:
