@@ -23,13 +23,71 @@ Entry format:
 - Held by: `tests/test_packages.py::test_installed_versions_match_pins`
 
 ## AUTH-D1: Does a call without the needed scope fail at HTTP level or as a tool error?
-- Decision: Open: decided in M2. Starting position: HTTP 403 with
-  `WWW-Authenticate: Bearer error="insufficient_scope"`, as the 2026-07-28 spec suggests.
-- Held by: (M2)
+- Decision: over HTTP, a 403 before the SDK sees the call, with
+  `WWW-Authenticate: Bearer error="insufficient_scope", scope="<the scopes it needs>",
+  resource_metadata="<metadata URL>", error_description="This call needs more scope"`.
+- Why: the 2026-07-28 spec says servers SHOULD answer a runtime scope shortfall this way,
+  and clients treat the challenge's `scope` as authoritative for a step-up. Refusing before
+  the SDK means a refused call can never reach a tool. A tool error would let the model read
+  it, but no client could use it to ask for more scope.
+- Held by: (Task 4)
 
 ## AUTH-D2: What does a rate-limited call return?
-- Decision: Open: decided in M2 (HTTP 429 vs a JSON-RPC error, and on stdio).
-- Held by: (M2)
+- Decision: over HTTP, 429 with `Retry-After: <seconds, rounded up>` and a JSON body
+  `{"error": "rate_limited", ...}`. The count is per principal `(iss, sub, client_id)`, not
+  per token. Every authenticated request to `/mcp` counts, refused ones included. It is a
+  fixed window (default 60 requests per 60 s) on the server's injected clock. stdio is not
+  limited: it has one local user and no token.
+- Why: the spec says nothing about rate limiting; 429 with `Retry-After` is the HTTP
+  standard and tells a client exactly when to retry. Counting per principal means minting a
+  fresh token doesn't reset the window. Unauthenticated requests (401) are not counted; that
+  flood case belongs to M5's rate-limit abuse tests.
+- Held by: (Task 5)
+
+## AUTH-D3: Who is the caller without HTTP, and how is a missing scope refused there?
+- Decision: stdio (and the in-process server) runs as `Identity(operator, scopes)` from
+  `ENERGY_MCP_OPERATOR` (default `local-operator`) and `ENERGY_MCP_SCOPES` (space-separated,
+  default `meters:read alerts:read reports:read`, so read-only). An unknown scope or a
+  malformed operator stops the server at startup. A refused tool call is a tool error
+  (`isError`, `Not allowed: this call needs scope <s>`); a refused resource read or prompt
+  is `-32602` with the same text. The same check (`ScopeGuard`) runs behind the HTTP edge
+  too, as a second line.
+- Why: the spec says stdio SHOULD take credentials from the environment. Read-only by
+  default means a server started by a desktop client can't write until someone says so. A
+  typo in a scope name should stop the server, not silently grant less. A tool error is what
+  the model can read; there is no HTTP status on stdio.
+- Held by: (Task 3)
+
+## AUTH-D4: Which scopes exist, and which scope implies which?
+- Decision: `meters:read` (`list_meters`, `get_readings`), `alerts:read` (`list_alerts`, the
+  `investigate_alert` prompt), `reports:read` (`resources/read`), `alerts:write` or
+  `alerts:write:<alert_id>` (`acknowledge_alert`). Listing methods and everything else need
+  only a valid token. `alerts:write` implies every `alerts:write:ALR-NNNN`; nothing else
+  implies anything. A missing or malformed `alert_id` needs `alerts:write`.
+- Why: the 2026-07-28 spec says servers MUST account for scope hierarchies. Per-alert scopes
+  are how a confused deputy is stopped in code (plan, M5). Deriving the per-alert scope only
+  from an ID that matches `ALR-[0-9]{4}` keeps caller text out of the challenge header.
+- Held by: (Task 3)
+
+## AUTH-D5: Which tokens are accepted?
+- Decision: RS256 only, signed by the configured public key, header `typ` `at+jwt` or
+  `application/at+jwt` (RFC 9068 §4). It must have `iss`, `aud`, `exp`, `iat`, `sub`,
+  `client_id`, `jti` and a string `scope` (RFC 9068 §2.2). Issuer and audience match
+  exactly. On the injected clock with no leeway: `exp > now`, `iat <= now`, `nbf <= now`
+  when present. `sub` and `client_id` must fullmatch `[A-Za-z0-9._-]{1,64}`.
+- Why: one fixed algorithm closes `alg: none` and the HS256-with-public-key confusion. `typ`
+  stops an ID token being replayed as an access token. `sub` becomes `acknowledged_by`, which
+  other callers' models read, so it is held to a plain format. No leeway because the clock is
+  ours.
+- Held by: (Task 2)
+
+## AUTH-D6: Can the server run over HTTP without auth?
+- Decision: no. `--transport http` refuses to start without `--public-key` and `--issuer`.
+  A server built for HTTP falls back to an identity with no scopes, so if the edge were
+  bypassed, `ScopeGuard` would refuse every call.
+- Why: an unauthenticated mode that exists gets used. Failing closed is a guardrail in code,
+  not a sentence in the README.
+- Held by: (Task 6)
 
 ## SRV-D1: What does a call with arguments that break the tool's schema return?
 - Decision: a tool execution error (`isError: true`), as the spec lists input validation

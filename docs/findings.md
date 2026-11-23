@@ -100,3 +100,39 @@ Entry format:
   `mcp__energy-mcp__list_meters` call and the server's own result for the seeded world.
   `test_a_run_that_bypassed_mcp_is_rejected` replays the screenshot's case and fails it.
   This is CLAUDE.md's "score the world, not the words" applied to our own evidence.
+
+## F-09: The SDK checks token expiry against the wall clock
+- Found by: the M2 spikes (mcp 2.3.0), pinned by
+  `tests/test_sdk_auth_findings.py::test_f09_sdk_checks_expiry_on_the_wall_clock`.
+- Evidence: `BearerAuthBackend.authenticate` compares `AccessToken.expires_at` with
+  `int(time.time())` after the token verifier has accepted the token. A token that is valid on
+  the server's own clock (here a fake clock in January 2026) is refused with 401 because the
+  wall clock says it has expired. Expiry can't be tested deterministically through the SDK.
+- Status: avoided. `energy_mcp`'s HTTP edge does not use `BearerAuthBackend`; its verifier
+  checks `exp`, `iat` and `nbf` on the injected clock (AUTH-D5).
+
+## F-10: The SDK answers a request with no token as if the token were invalid
+- Found by: the M2 spikes, pinned by `test_f10_sdk_missing_token_says_invalid_token`.
+- Evidence: with no `Authorization` header the SDK answers 401 with
+  `Bearer error="invalid_token", error_description="Authentication required"`, the same
+  header as for a bad token. RFC 6750 §3 says that when a request has no authentication
+  information the resource server SHOULD NOT include an error code. A client can't tell
+  "you sent nothing" from "what you sent is bad".
+- Status: ours differs: no `error` for a missing token, `error="invalid_token"` for a bad
+  one (AUTH-02).
+
+## F-11: The SDK's 401 and 403 challenges carry no `scope`
+- Found by: the M2 spikes, pinned by `test_f11_sdk_challenges_carry_no_scope`.
+- Evidence: neither the 401 nor the 403 `insufficient_scope` header has a `scope` parameter
+  (the 403 names the scope only in `error_description`). The MCP spec says servers SHOULD
+  include `scope` in the 401 challenge, and the 403 runtime challenge carries the scopes the
+  operation needs, which clients treat as authoritative.
+- Status: ours carries `scope` in both (AUTH-D1, AUTH-02).
+
+## F-12: The SDK publishes `scopes_supported` only from the server-wide required scopes
+- Found by: the M2 spikes, pinned by `test_f12_sdk_metadata_scopes_are_the_required_scopes`.
+- Evidence: the RFC 9728 metadata copies `AuthSettings.required_scopes` into
+  `scopes_supported` and omits the field when it is unset. `required_scopes` is also checked
+  on every request, so a server with per-tool scopes can either publish none or require all
+  of them on every call.
+- Status: we serve our own metadata with the four base scopes (AUTH-03).
