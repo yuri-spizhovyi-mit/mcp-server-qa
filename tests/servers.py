@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx2
 import jsonschema
 from mcp import Client, StdioServerParameters
+from mcp.client.streamable_http import streamable_http_client
 
 # Client(mode=...): "legacy" negotiates 2025-11-25 with initialize; "2026-07-28" pins the new revision.
 MODES = ("legacy", "2026-07-28")
@@ -97,3 +100,52 @@ def writer() -> Any:
     from energy_mcp.scopes import READ_SCOPES
 
     return Identity("op-1", READ_SCOPES | {"alerts:write"})
+
+
+BASE = "http://127.0.0.1:8000"  # the SDK's host check refuses other hosts (spike, M2 plan)
+MCP_URL = f"{BASE}/mcp"
+METADATA_URL = f"{BASE}/.well-known/oauth-protected-resource/mcp"
+
+
+@asynccontextmanager
+async def running(server: Any) -> AsyncIterator[None]:
+    """Start the SDK's Streamable HTTP session manager (ASGITransport sends no lifespan events)."""
+    async with server.session_manager.run():
+        yield
+
+
+def http(app: Any, token: str | None = None, scheme: str = "Bearer") -> httpx2.AsyncClient:
+    """An HTTP client that talks to `app` in-process, optionally with a bearer token."""
+    headers = {"authorization": f"{scheme} {token}"} if token is not None else {}
+    return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url=BASE, headers=headers)
+
+
+def mcp_over(client: httpx2.AsyncClient, mode: str) -> Client:
+    return Client(streamable_http_client(MCP_URL, http_client=client), mode=mode)
+
+
+def rpc(method: str, params: Any = None, request_id: int = 1) -> dict[str, Any]:
+    message: dict[str, Any] = {"jsonrpc": "2.0", "id": request_id, "method": method}
+    if params is not None:
+        message["params"] = params
+    return message
+
+
+def tool_call(name: str, arguments: Any = None) -> dict[str, Any]:
+    return rpc("tools/call", {"name": name, "arguments": {} if arguments is None else arguments})
+
+
+async def post(client: httpx2.AsyncClient, body: Any, *, raw: bytes | None = None,
+               content_type: str = "application/json", **headers: str) -> httpx2.Response:
+    content = raw if raw is not None else json.dumps(body).encode()
+    return await client.post("/mcp", content=content, headers={
+        "content-type": content_type, "accept": "application/json, text/event-stream", **headers})
+
+
+ENVELOPE = {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}
+
+
+def modern_headers(method: str, name: str | None = None) -> dict[str, str]:
+    """The headers a raw 2026-07-28 request needs; the SDK checks they mirror the body (-32020)."""
+    headers = {"mcp-protocol-version": "2026-07-28", "mcp-method": method}
+    return headers | ({"mcp-name": name} if name else {})
