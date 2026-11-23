@@ -52,6 +52,19 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return dict(pairs)
 
 
+def _valid_id(value: Any) -> bool:
+    return isinstance(value, int | str) and not isinstance(value, bool)
+
+
+def _not_a_message(message: dict[str, Any]) -> bool:
+    """True unless `message` is a JSON-RPC 2.0 request, notification or response (F-17)."""
+    if message.get("jsonrpc") != "2.0" or ("id" in message and not (_valid_id(message["id"]) or message["id"] is None)):
+        return True
+    if "method" in message:
+        return not isinstance(message["method"], str)
+    return not ("id" in message and ("result" in message or "error" in message))
+
+
 def _parse(body: bytes) -> Any:
     try:
         message = json.loads(body.decode("utf-8"), object_pairs_hook=_no_duplicates)
@@ -108,6 +121,11 @@ class AuthEdge:
         if message is UNREADABLE:
             await _respond(send, 400, {"jsonrpc": "2.0", "id": None,
                                        "error": {"code": -32700, "message": "Parse error: one JSON object expected"}})
+            return
+        if scope["method"] == "POST" and _not_a_message(message):  # the caller's text is not echoed (F-17)
+            request_id = message.get("id") if _valid_id(message.get("id")) else None
+            await _respond(send, 400, {"jsonrpc": "2.0", "id": request_id,
+                                       "error": {"code": -32600, "message": "Invalid Request"}})
             return
         if lacking := missing(token.scopes, needs):
             await _respond(send, 403, {"error": "insufficient_scope", "error_description": "This call needs more scope"},

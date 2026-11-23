@@ -3,21 +3,31 @@
 from __future__ import annotations
 
 import json
+import os
+import queue
 import socket
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 import httpx2
 import jsonschema
 from mcp import Client, StdioServerParameters
 from mcp.client.stdio import get_default_environment
 from mcp.client.streamable_http import streamable_http_client
+
+# Imported here, not inside a helper: pytester restores sys.modules after each test, and a
+# cryptography module imported during one test and re-imported in the next no longer matches
+# its own classes ("Padding must be an instance of AsymmetricPadding").
+from issuer import Issuer
 
 # Client(mode=...): "legacy" negotiates 2025-11-25 with initialize; "2026-07-28" pins the new revision.
 MODES = ("legacy", "2026-07-28")
@@ -60,13 +70,13 @@ def free_port() -> int:
 
 
 @contextmanager
-def http_server(port: int, *, public_key: Path, issuer: str, timeout: float = 20.0) -> Iterator[str]:
+def http_server(port: int, *extra: str, public_key: Path, issuer: str, timeout: float = 20.0) -> Iterator[str]:
     """Run `python -m energy_mcp --transport http` on port; yield its MCP URL; stop it on exit.
 
     The process runs on the wall clock, so its tokens are minted with `now=time.time()`.
     """
     proc = subprocess.Popen([sys.executable, "-m", "energy_mcp", "--transport", "http", "--port", str(port),
-                             "--public-key", str(public_key), "--issuer", issuer],
+                             "--public-key", str(public_key), "--issuer", issuer, *extra],
                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
         deadline = time.monotonic() + timeout
@@ -170,3 +180,123 @@ async def post_call(client: httpx2.AsyncClient, name: str, arguments: Any = None
     """
     body = rpc("tools/call", {"name": name, "arguments": {} if arguments is None else arguments, "_meta": ENVELOPE})
     return await post(client, body, **modern_headers("tools/call", name))
+
+
+class RawStdio:
+    """Raw JSON lines to a subprocess's stdin, answers read from its stdout (for protocol edge cases).
+
+    `read()` returns the next JSON message, or None after `timeout`. The first read may also take
+    `startup_timeout`, because the process is still starting: importing the SDK takes seconds on
+    a busy Windows machine (F-16). Lines on stdout that are not JSON go to `noise`. The process
+    is killed on exit, whatever state it is in.
+    """
+
+    def __init__(self, argv: list[str], env: dict[str, str] | None = None, timeout: float = 5.0,
+                 startup_timeout: float = 30.0) -> None:
+        self.timeout = timeout
+        self._startup_left = max(startup_timeout, timeout)
+        self.noise: list[str] = []
+        self._lines: queue.Queue[bytes | None] = queue.Queue()
+        self.proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, env=env or get_default_environment())
+        threading.Thread(target=self._pump, daemon=True).start()
+
+    def _pump(self) -> None:
+        for line in self.proc.stdout:
+            self._lines.put(line)
+        self._lines.put(None)
+
+    def send(self, message: Any) -> None:
+        data = message if isinstance(message, bytes) else json.dumps(message).encode()
+        self.proc.stdin.write(data + b"\n")
+        self.proc.stdin.flush()
+
+    def read(self) -> dict | None:
+        deadline = time.monotonic() + (self._startup_left or self.timeout)
+        while (left := deadline - time.monotonic()) > 0:
+            try:
+                line = self._lines.get(timeout=left)
+            except queue.Empty:
+                return None
+            if line is None:
+                return None
+            self._startup_left = 0.0  # the process has started: it wrote something
+            try:
+                return json.loads(line)
+            except ValueError:
+                self.noise.append(line.decode("utf-8", "replace").rstrip())
+        return None
+
+    def __enter__(self) -> "RawStdio":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.proc.kill()
+        self.proc.wait(timeout=10)
+        for stream in (self.proc.stdin, self.proc.stdout):
+            stream.close()
+
+
+@contextmanager
+def authenticated_http_server(tmp_path: Path, *extra: str) -> Iterator[tuple[str, str]]:
+    """A real HTTP server process with its own issuer key; yields its URL and a wall-clock read token."""
+    port = free_port()
+    issuer = Issuer(audience=f"http://127.0.0.1:{port}/mcp")
+    key = tmp_path / "issuer.pem"
+    key.write_bytes(issuer.public_pem)
+    with http_server(port, *extra, public_key=key, issuer=issuer.issuer) as url:
+        yield url, issuer.mint(scope="meters:read alerts:read reports:read", now=time.time())
+
+
+@dataclass
+class McpqaReport:
+    """One mcpqa run, per (check, revision): `outcomes` is passed / failed / skipped, `messages` the
+    failure or skip text. `passed`, `failed` and `skipped` group by check name."""
+
+    outcomes: dict[tuple[str, str], str]
+    messages: dict[tuple[str, str], str]
+    output: str
+
+    @property
+    def failed(self) -> set[str]:
+        return {name for (name, _), outcome in self.outcomes.items() if outcome == "failed"}
+
+    @property
+    def passed(self) -> set[str]:
+        return {name for (name, _), outcome in self.outcomes.items() if outcome == "passed"} - self.failed
+
+    @property
+    def skipped(self) -> dict[str, str]:
+        return {name: self.messages[(name, rev)] for (name, rev), outcome in self.outcomes.items()
+                if outcome == "skipped" and name not in self.failed}
+
+    def runs(self, outcome: str) -> set[tuple[str, str]]:
+        return {key for key, value in self.outcomes.items() if value == outcome}
+
+
+def run_mcpqa(workdir: Path, target: str, *extra: str, env: dict[str, str] | None = None) -> McpqaReport:
+    """Run mcpqa's conformance checks against `target` as an outsider would, in a fresh pytest process.
+
+    Results come from a JUnit XML report. `-c` points at an empty ini in `workdir`, so the
+    repo's own pytest settings play no part. The process inherits the environment plus `env`.
+    """
+    workdir.mkdir(parents=True, exist_ok=True)
+    ini, report = workdir / "empty.ini", workdir / "mcpqa-report.xml"
+    ini.write_text("[pytest]\n", encoding="utf-8")
+    result = subprocess.run([sys.executable, "-m", "pytest", "-c", str(ini), "--rootdir", str(workdir),
+                             "--pyargs", "mcpqa.conformance", "--target", target, "--mcpqa-timeout", "5",
+                             "-p", "no:cacheprovider", f"--junitxml={report}", *extra],
+                            cwd=workdir, env={**os.environ, **(env or {})}, capture_output=True, text=True,
+                            timeout=900)
+    outcomes, messages = {}, {}
+    for case in ElementTree.parse(report).getroot().iter("testcase"):
+        name, _, revision = case.get("name", "").partition("[")
+        key = (name, revision.rstrip("]"))
+        problem = case.find("failure") if case.find("failure") is not None else case.find("error")
+        if problem is not None:
+            outcomes[key], messages[key] = "failed", problem.get("message", "") + "\n" + (problem.text or "")
+        elif (skip := case.find("skipped")) is not None:
+            outcomes[key], messages[key] = "skipped", skip.get("message", "")
+        else:
+            outcomes[key] = "passed"
+    return McpqaReport(outcomes, messages, result.stdout + result.stderr)

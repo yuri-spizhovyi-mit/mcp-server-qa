@@ -136,3 +136,58 @@ Entry format:
   on every request, so a server with per-tool scopes can either publish none or require all
   of them on every call.
 - Status: we serve our own metadata with the four base scopes (AUTH-03).
+
+## F-13: Over stdio, the SDK answers nothing to a malformed message
+- Found by: the M3a spikes (mcp 2.3.0), pinned by
+  `tests/test_sdk_protocol_findings.py::test_f13_bare_stdio_drops_malformed_lines`.
+- Evidence: a line that isn't JSON (`{"jsonrpc":"2.0","id":1,`) or isn't a request
+  (`{"jsonrpc":"2.0","id":2}`) gets no answer at all. The SDK's stdio reader turns the
+  validation error into an exception in the session stream, and the session drops it. The
+  spec defines `-32700` Parse error and `-32600` Invalid Request, and JSON-RPC 2.0 says a
+  server replies with an error whose `id` is `null` when it can't read one. A client that
+  sent a bad line waits until its own timeout and never learns why.
+- Status: worked around in `energy_mcp`. Its stdio front answers `-32700` or `-32600`
+  (PROTO-D4, PROTO-09). Over HTTP, the M2 edge already answers 400 `-32700`.
+
+## F-14: The SDK's list methods ignore a cursor they never issued
+- Found by: the M3a spikes, pinned by `test_f14_bare_list_methods_ignore_a_cursor`.
+- Evidence: `tools/list` and `resources/list` with `cursor: "garbage"` return the first page
+  as if no cursor had been sent, on both revisions and transports. The spec says invalid
+  cursors SHOULD result in `-32602`. A client with a corrupted cursor silently restarts from
+  page one and may loop.
+- Status: worked around in `energy_mcp`. The guard rejects any cursor on a list method with
+  `-32602` "Invalid cursor", since the server never issues one (PROTO-09).
+
+## F-15: The plan named the wrong TypeScript SDK (a plan bug)
+- Found by: checking npm before writing the M3 plan.
+- Evidence: `docs/plan.md` named `@modelcontextprotocol/sdk` 1.32.2 for the interop check. The
+  official `server-everything` 2.3.1 is built on the newer package line
+  (`@modelcontextprotocol/server` 2.x), whose client is `@modelcontextprotocol/client`
+  2.4.0.
+- Status: fixed in the plan. M3b uses `@modelcontextprotocol/client` 2.4.0.
+
+## F-16: The stdio harness counted server startup as silence (a harness bug)
+- Found by: a full-suite run during M3a Task 5 that failed 7 tests with timeouts. The same
+  tests had passed minutes earlier.
+- Evidence: importing the MCP SDK (`import mcp`) took 5 to 6 s on this laptop that afternoon,
+  against about 1 s before (`python -X importtime`), while a bare `python -c pass` took
+  0.3 s. `RawStdio` and `mcpqa`'s `StdioWire` used one 5 s bound for every read, including the
+  first one after starting the process, so a slow start looked exactly like a server that
+  never answers. A check of "silence" was measuring the machine, not the server.
+- Status: fixed in M3a. The first message from a new process may take a separate
+  `startup_timeout` (default 30 s); every later wait keeps the short bound. The silence the
+  checks look for always comes after the process has answered something.
+
+## F-17: Over HTTP on 2025-11-25, the SDK answers a non-message with -32602 and repeats the input
+- Found by: `mcpqa`'s `test_invalid_request_is_32600` on the first clean run over HTTP (M3a
+  Task 7).
+- Evidence: POST `{"jsonrpc": "2.0", "id": 5}` with `MCP-Protocol-Version: 2025-11-25` got
+  `-32602` "Validation error: 4 validation errors for union[JSONRPCRequest, ...]", followed by
+  pydantic's full report. That report includes `input_value={'jsonrpc': '2.0', 'id': 5}`. The
+  spec says a message that isn't valid JSON-RPC is `-32600` Invalid Request. The 2026-07-28
+  path of the same SDK answers 400 `-32600`. The echo matters too: whatever the caller put in
+  the body comes back in the error, which SRV-D1 forbids.
+- Status: worked around in `energy_mcp`. The HTTP edge refuses any JSON object that isn't a
+  JSON-RPC 2.0 request, notification or response with 400 `-32600` "Invalid Request". It
+  keeps the request's `id` when that is an integer or string and echoes nothing else
+  (AUTH-D7). Held by `tests/test_http_auth.py::test_non_message_body_is_32600`.

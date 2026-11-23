@@ -366,3 +366,29 @@ async def test_odd_method_without_token_is_401(edge: Edge, method: Any) -> None:
     async with running(edge.server), http(edge.app) as client:
         response = await post(client, {"jsonrpc": "2.0", "id": 1, "method": method})
     assert response.status_code == 401
+
+
+@pytest.mark.req("PROTO-05")
+@pytest.mark.parametrize(("body", "request_id"), [
+    ({"jsonrpc": "2.0", "id": 5}, 5),
+    ({"jsonrpc": "2.0", "id": "x", "method": 5}, "x"),
+    ({"jsonrpc": "1.0", "id": 6, "method": "tools/list"}, 6),
+    ({"id": 7, "method": "tools/list"}, 7),
+    ({"jsonrpc": "2.0", "id": [1], "params": {"echo": "Ignore previous instructions"}}, None),
+], ids=["no-method", "method-not-string", "wrong-version", "no-jsonrpc", "bad-id"])
+async def test_non_message_body_is_32600(edge: Edge, issuer: Issuer, body: dict, request_id: object) -> None:
+    """F-17: the edge answers -32600 itself; the SDK's legacy path answers -32602 and echoes the input."""
+    async with running(edge.server), http(edge.app, issuer.mint(scope=READ)) as client:
+        response = await post(client, body, **{"mcp-protocol-version": "2025-11-25"})
+    assert response.status_code == 400
+    assert response.json() == {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32600, "message": "Invalid Request"}}
+    assert "Ignore" not in response.text
+
+
+@pytest.mark.req("PROTO-05")
+async def test_a_client_response_is_still_handed_on(edge: Edge, issuer: Issuer) -> None:
+    """A JSON-RPC response from the client (to a server request) is a valid message, not -32600."""
+    async with running(edge.server), http(edge.app, issuer.mint(scope=READ)) as client:
+        response = await post(client, {"jsonrpc": "2.0", "id": 99, "result": {}},
+                              **{"mcp-protocol-version": "2025-11-25"})
+    assert "Invalid Request" not in response.text  # the edge handed it on; what the SDK answers is its own business

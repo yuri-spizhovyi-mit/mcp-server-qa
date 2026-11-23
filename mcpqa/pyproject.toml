@@ -7,7 +7,10 @@ name = "mcpqa"
 version = "0.0.0"
 description = "A reusable test suite for MCP servers: conformance, contracts and security checks."
 requires-python = ">=3.12"
-dependencies = ["mcp>=2.3,<3"]
+dependencies = ["httpx2>=2.16,<3", "pytest>=9,<10"]
+
+[project.entry-points.pytest11]
+mcpqa = "mcpqa.plugin"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcpqa"]

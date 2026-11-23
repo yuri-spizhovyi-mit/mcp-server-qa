@@ -98,12 +98,36 @@ Entry format:
 - Held by: `tests/test_cli_auth.py::test_http_needs_key_and_issuer`,
   `tests/test_http_auth.py::test_scope_guard_holds_if_the_edge_lets_a_call_through`
 
+## PROTO-D5: What does mcpqa do with a rule the spec only recommends (SHOULD)?
+- Decision: `mcpqa` checks it and fails a server that breaks it, but the failure says so. It
+  starts `SHOULD (the spec recommends this; it does not require it):`, and the check's
+  docstring names the rule. Three checks are SHOULDs today:
+  - `test_invalid_cursor_is_32602` ("Invalid cursors SHOULD result in ... -32602").
+  - `test_unknown_tool_is_32602` (the tools page gives an unknown tool as its example of a
+    protocol error).
+  - The undeclared half of `test_declared_capabilities_work` (`-32601` for a method behind an
+    unadvertised capability: a 2026-07-28 schema example; 2025-11-25 doesn't say).
+
+  Every other check is a MUST, and its failures start `MUST:`.
+- Why: a server that breaks these confuses clients in practice (a corrupted cursor silently
+  restarts at page one; an unknown tool looks like a tool that ran), so a quality bar should
+  include them. But a reader must be able to tell "breaks the spec" from "doesn't follow its
+  advice", because the plain mcp 2.3.0 SDK fails all three (F-01, F-14). A separate,
+  non-failing severity (for example a `--strict` flag) is a possible later change; for now
+  the label does the job.
+- Held by: `tests/test_conformance.py::test_pagination_checks_catch_their_broken_copies`
+  (`accepts-any-cursor`), `tests/test_conformance.py::test_capability_checks_catch_their_broken_copies`
+  (`undeclared-tools`): their expected messages carry the SHOULD label.
+
 ## AUTH-D7: What does the HTTP edge do with a request it can't read for certain?
 - Decision: the edge decides on every request itself and hands the SDK only what it read for
   certain.
   - A POST body that is not one UTF-8 JSON object without duplicate keys gets 400 with a
     JSON-RPC `-32700` body. Arrays, invalid JSON, non-UTF-8 and duplicate keys at any depth
     are all refused. The content type is ignored: the body is read whatever it claims.
+  - A JSON object that isn't a JSON-RPC 2.0 request, notification or response gets 400
+    `-32600` "Invalid Request", with its `id` when that is an integer or string, else `null`
+    (F-17, added in M3a).
   - A body over `max_body` (default 4 MiB) gets 413.
   - A client that hangs up before the body is complete gets nothing, and nothing is handed
     on.
@@ -124,7 +148,54 @@ Entry format:
   `tests/test_http_auth.py::test_body_over_the_limit_is_refused`,
   `tests/test_http_auth.py::test_aborted_request_is_not_executed`,
   `tests/test_http_auth.py::test_every_path_but_metadata_needs_a_token`,
-  `tests/test_rate_limit.py::test_call_n_plus_one_is_429_and_resets_on_the_clock`
+  `tests/test_rate_limit.py::test_call_n_plus_one_is_429_and_resets_on_the_clock`,
+  `tests/test_http_auth.py::test_non_message_body_is_32600`
+
+## PROTO-D1: What must a server answer for an unsupported protocol version (2026-07-28)?
+- Decision: `mcpqa`'s check requires all of these:
+  - error `-32022`;
+  - `data.requested` equal to the version sent;
+  - `data.supported` a non-empty list that contains `2026-07-28` and only versions the server
+    accepts;
+  - HTTP 400 over HTTP.
+
+  It does not require `2025-11-25` in the list.
+- Why: the spec says the server MUST answer `-32022` "listing the versions it does support".
+  Its example lists both revisions, but mcp 2.3.0 lists only the revision of the request's
+  own style, while still serving `2025-11-25` through `initialize`. Requiring the older
+  version would fail every server built on this SDK over an example, not a rule.
+- Held by: `tests/test_conformance.py::test_handshake_checks_catch_their_broken_copies`
+  (`wrong-unsupported-version-error`), `tests/test_conformance.py::test_clean_server_passes_over_stdio`
+
+## PROTO-D2: What must a 2025-11-25 server answer to `initialize` with a version it doesn't support?
+- Decision: a result whose `protocolVersion` is a version the server serves. An error fails
+  the check, and so does an echo of the unknown version.
+- Why: the lifecycle page says the server "MUST respond with another protocol version it
+  supports". An echo would let a client believe both sides agree on a version neither
+  implements.
+- Held by: `tests/test_conformance.py::test_handshake_checks_catch_their_broken_copies`
+  (`echoes-unknown-version`)
+
+## PROTO-D3: How is a target named?
+- Decision: `--target` takes one of three forms:
+  - `stdio:` plus a JSON array, which is the exact argv;
+  - `stdio:` plus a command split with `shlex` (POSIX rules);
+  - an `http://` or `https://` URL.
+
+  A bearer token comes from the environment variable that `--token-env` names.
+- Why: Windows paths have backslashes and spaces, which shell splitting mangles, while a JSON
+  array is exact on every OS. Tokens never go on a command line, where they end up in shell
+  history and CI logs.
+- Held by: `tests/test_mcpqa_core.py::test_parse_target_forms`
+
+## PROTO-D4: What does `energy_mcp` answer to a malformed stdio line?
+- Decision: `-32700` for a line that isn't JSON, with `id: null`. Anything else that isn't
+  a valid message gets `-32600`, with the message's `id` when it is an integer or string,
+  else `null`.
+- Why: JSON-RPC 2.0 says to reply, and to use `null` only when the id can't be read. An
+  answer tells the client which line was bad; silence only makes it wait (F-13).
+- Held by: `tests/test_stdio_front.py::test_malformed_lines_get_an_answer`,
+  `tests/test_conformance.py::test_error_checks_catch_their_broken_copies` (`drops-malformed`)
 
 ## SRV-D1: What does a call with arguments that break the tool's schema return?
 - Decision: a tool execution error (`isError: true`), as the spec lists input validation

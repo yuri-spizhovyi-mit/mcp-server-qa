@@ -20,7 +20,9 @@ jobs:
   tests:
     name: tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # M3a's conformance tests start a fresh pytest and several server processes per broken
+    # copy: the full suite took 3 to 16 minutes on a Windows laptop. M3b cuts the run time.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

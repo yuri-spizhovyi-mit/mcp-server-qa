@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 import uvicorn
 from mcp import Client
-from mcp.server import MCPServer
 
 from energy_mcp.__main__ import main, parse_args
 from energy_mcp.edge import AuthEdge
@@ -43,7 +42,7 @@ def test_cli_hands_uvicorn_the_edge(issuer: Issuer, tmp_path: Path, monkeypatch:
 
 @pytest.mark.req("AUTH-07")
 def test_bad_env_identity_stops_stdio(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    monkeypatch.setattr(MCPServer, "run", lambda self, *a, **kw: pytest.fail("the server must not start"))
+    monkeypatch.setattr("energy_mcp.__main__.run_stdio", lambda *a, **kw: pytest.fail("the server must not start"))
     monkeypatch.setenv("ENERGY_MCP_SCOPES", "alert:write")
     with pytest.raises(SystemExit) as caught:
         main([])

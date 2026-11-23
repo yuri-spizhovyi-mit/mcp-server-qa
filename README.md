@@ -35,6 +35,25 @@ Set `ENERGY_MCP_SCOPES` to `meters:read alerts:read reports:read alerts:write` t
 
 The tests mint their own tokens; see `tests/issuer.py`.
 
+## Check any MCP server with mcpqa
+
+`mcpqa` is a pytest plugin that checks a server's protocol conformance on both revisions (2025-11-25 and 2026-07-28). It speaks the protocol with its own client, not an SDK. Run it in Windows PowerShell, in the repo folder:
+
+```powershell
+.\.venv\Scripts\python -m pytest --pyargs mcpqa.conformance -rs --% --target "stdio:[\"C:\\path\\to\\python.exe\", \"-m\", \"energy_mcp\"]"
+```
+
+`--%` makes Windows PowerShell 5.1 pass the rest of the line unchanged; without it, 5.1 strips the inner quotes and the JSON breaks. In PowerShell 7.3 or later, `--target 'stdio:["C:\\path\\to\\python.exe", "-m", "energy_mcp"]'` works as written.
+
+- **Targets:**
+  - `stdio:` followed by a JSON array, which is exact. Use this for Windows paths.
+  - `stdio:` followed by a command line.
+  - An `http://` URL, with `--token-env NAME` naming the environment variable that holds the bearer token. The token never goes on the command line.
+- **Revisions:** `--protocol-version` picks one revision; the default is both.
+- **Read-only:** it calls only tools annotated read-only.
+- **Not applicable:** a check that doesn't apply to the target is reported as `not applicable: <reason>`, never as a silent pass.
+- **Proof the checks can fail:** each check has a broken copy of `energy_mcp` that it must catch (`energy_mcp --variant NAME`, tests only). See `tests/test_conformance.py`.
+
 ## Try it with Claude (no API key)
 
 Replace `C:\path\to\mcp-server-qa` with the full path of this folder.
