@@ -5,14 +5,14 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**23 requirements, 23 traced: 113 requirement-test links.**
+**24 requirements, 24 traced: 123 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
 | Server | 8 | 39 | 5 |
 | Auth | 9 | 49 | 7 |
-| Protocol | 1 | 5 | 1 |
+| Protocol | 2 | 15 | 2 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -39,3 +39,4 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | AUTH-06 | medium | Over HTTP, each principal gets limit authenticated requests per window on the server's clock; the next one gets 429 with Retry-After, before scope checks and before the server runs; the window resets on the clock; a new token for the same principal does not reset it; other principals are unaffected. | `test_limiter_counts_and_resets`<br>`test_call_n_plus_one_is_429_and_resets_on_the_clock`<br>`test_new_token_same_principal_stays_limited`<br>`test_other_principal_unaffected`<br>`test_refused_scope_calls_count`<br>`test_limited_call_never_reaches_the_server`<br>`test_unauthenticated_requests_are_not_counted` |
 | AUTH-09 | high | --transport http will not start without a public key and issuer; a real HTTP server process refuses a request without a token and serves one with a valid token; a real stdio process applies ENERGY_MCP_SCOPES. | `test_http_needs_key_and_issuer`<br>`test_cli_hands_uvicorn_the_edge`<br>`test_http_process_refuses_without_token` |
 | PROTO-09 | high | energy_mcp answers every stdio line that is not a valid message (-32700 for invalid JSON, -32600 otherwise, with the request's id when it has one) and rejects any cursor on a list method with -32602, where the bare SDK stays silent or ignores the cursor (F-13, F-14). | `test_f13_bare_stdio_drops_malformed_lines`<br>`test_f14_bare_list_methods_ignore_a_cursor`<br>`test_malformed_lines_get_an_answer`<br>`test_list_cursor_is_invalid_params`<br>`test_list_without_cursor_still_works` |
+| PROTO-01 | high | mcpqa is a pytest plugin that takes --target (a stdio JSON array or command, or an HTTP URL), a bearer token from the variable --token-env names, and --protocol-version; it speaks the protocol with its own client and imports neither mcp nor energy_mcp; a check whose precondition is missing skips as not applicable, with the reason. | `test_parse_target_forms`<br>`test_stdio_wire_exchanges_and_records_noise`<br>`test_wire_closes_its_process_on_error`<br>`test_silence_is_a_timeout`<br>`test_sse_reply_is_parsed`<br>`test_session_opens_both_revisions_over_stdio`<br>`test_session_opens_both_revisions_over_http`<br>`test_plugin_reports_not_applicable`<br>`test_plugin_requires_a_target`<br>`test_mcpqa_imports_no_mcp_sdk` |

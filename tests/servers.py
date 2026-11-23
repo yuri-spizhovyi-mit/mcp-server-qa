@@ -62,13 +62,13 @@ def free_port() -> int:
 
 
 @contextmanager
-def http_server(port: int, *, public_key: Path, issuer: str, timeout: float = 20.0) -> Iterator[str]:
+def http_server(port: int, *extra: str, public_key: Path, issuer: str, timeout: float = 20.0) -> Iterator[str]:
     """Run `python -m energy_mcp --transport http` on port; yield its MCP URL; stop it on exit.
 
     The process runs on the wall clock, so its tokens are minted with `now=time.time()`.
     """
     proc = subprocess.Popen([sys.executable, "-m", "energy_mcp", "--transport", "http", "--port", str(port),
-                             "--public-key", str(public_key), "--issuer", issuer],
+                             "--public-key", str(public_key), "--issuer", issuer, *extra],
                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
         deadline = time.monotonic() + timeout
@@ -222,3 +222,16 @@ class RawStdio:
         self.proc.wait(timeout=10)
         for stream in (self.proc.stdin, self.proc.stdout):
             stream.close()
+
+
+@contextmanager
+def authenticated_http_server(tmp_path: Path, *extra: str) -> Iterator[tuple[str, str]]:
+    """A real HTTP server process with its own issuer key; yields its URL and a wall-clock read token."""
+    from issuer import Issuer
+
+    port = free_port()
+    issuer = Issuer(audience=f"http://127.0.0.1:{port}/mcp")
+    key = tmp_path / "issuer.pem"
+    key.write_bytes(issuer.public_pem)
+    with http_server(port, *extra, public_key=key, issuer=issuer.issuer) as url:
+        yield url, issuer.mint(scope="meters:read alerts:read reports:read", now=time.time())

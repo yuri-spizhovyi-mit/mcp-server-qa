@@ -59,3 +59,14 @@ def test_installed_versions_match_pins() -> None:
     assert pins["mcp"] == "2.3.0"
     from mcp import Client  # noqa: F401  (the v2 API the plan is written against)
     from mcp.server import MCPServer  # noqa: F401
+
+
+@pytest.mark.req("PROTO-01")
+def test_mcpqa_imports_no_mcp_sdk() -> None:
+    """Approach A (M3): the checker speaks the protocol itself, so an SDK bug can't hide on both sides."""
+    for path in sorted((REPO / "mcpqa" / "src").rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            names = ([a.name for a in node.names] if isinstance(node, ast.Import)
+                     else [node.module or ""] if isinstance(node, ast.ImportFrom) else [])
+            for name in names:
+                assert name.split(".")[0] not in {"mcp", "mcp_types"}, f"{path.relative_to(REPO)} imports {name}"

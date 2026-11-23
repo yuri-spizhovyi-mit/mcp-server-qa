@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import time
 from pathlib import Path
 
 import httpx2
@@ -18,7 +17,7 @@ from mcp_types.jsonrpc import INVALID_PARAMS
 from energy_mcp.__main__ import main, parse_args
 from energy_mcp.server import TOOL_NAMES
 from issuer import Issuer
-from servers import MODES, free_port, http_server, stdio_params, validate
+from servers import MODES, authenticated_http_server, stdio_params, validate
 
 pytestmark = pytest.mark.req("SRV-07")
 
@@ -66,17 +65,6 @@ async def test_transport_behaves_like_in_process(transport: str, mode: str, tmp_
             with pytest.raises(MCPError) as caught:
                 await client.call_tool("nosuch", {})
             assert caught.value.error.code == INVALID_PARAMS
-
-
-@contextlib.contextmanager
-def authenticated_http_server(tmp_path: Path):
-    """A real HTTP server process with its own issuer key; yields its URL and a wall-clock read token."""
-    port = free_port()
-    issuer = Issuer(audience=f"http://127.0.0.1:{port}/mcp")
-    key = tmp_path / "issuer.pem"
-    key.write_bytes(issuer.public_pem)
-    with http_server(port, public_key=key, issuer=issuer.issuer) as url:
-        yield url, issuer.mint(scope="meters:read alerts:read reports:read", now=time.time())
 
 
 @pytest.mark.req("AUTH-09")
