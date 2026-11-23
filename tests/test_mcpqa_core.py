@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import threading
 import time
@@ -289,3 +291,48 @@ def test_http_reply_with_another_id_is_an_error() -> None:
         wire = HttpWire("http://127.0.0.1:8000/mcp", transport=httpx2.MockTransport(handler))
         with pytest.raises(MismatchedReply):
             wire.exchange({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+
+
+GRANDCHILD = """
+import json, os, sys
+print(json.dumps({"pid": os.getpid()}), flush=True)  # noise on purpose: tells the test who to look for
+for line in sys.stdin:
+    message = json.loads(line)
+    print(json.dumps({"jsonrpc": "2.0", "id": message.get("id"), "result": {}}), flush=True)
+import time
+time.sleep(60)  # ignores stdin closing (the spec only says servers SHOULD exit then), still holding stdout
+"""
+LAUNCHER = """
+import subprocess, sys
+subprocess.run([sys.executable, sys.argv[1]])  # like npx or uv run: the server is a grandchild
+"""
+
+
+def alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        listed = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True).stdout
+        return str(pid) in listed
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def test_close_kills_a_launched_server_too(tmp_path: Path) -> None:
+    """I4: killing only the launcher leaves the real server holding stdout, and close() hangs."""
+    (tmp_path / "server.py").write_text(GRANDCHILD, encoding="utf-8")
+    (tmp_path / "launcher.py").write_text(LAUNCHER, encoding="utf-8")
+    wire = StdioWire([sys.executable, str(tmp_path / "launcher.py"), str(tmp_path / "server.py")], timeout=5)
+    assert wire.exchange({"jsonrpc": "2.0", "id": 1, "method": "x"}).message["result"] == {}
+    grandchild = json.loads(wire.noise[0])["pid"]
+    started = time.monotonic()
+    closer = threading.Thread(target=wire.close, daemon=True)
+    closer.start()
+    closer.join(15)
+    assert not closer.is_alive(), "close() hung"
+    assert time.monotonic() - started < 15
+    deadline = time.monotonic() + 5
+    while alive(grandchild) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    assert not alive(grandchild), "the launched server outlived close()"

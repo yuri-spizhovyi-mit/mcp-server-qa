@@ -10,7 +10,10 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shutil
+import signal
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Iterator, Mapping
@@ -58,8 +61,14 @@ class StdioWire:
         self._startup_left = max(startup_timeout, timeout)
         self.noise: list[str] = []
         self._lines: queue.Queue[bytes | None] = queue.Queue()
-        self.process = subprocess.Popen(list(argv), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                        stderr=subprocess.DEVNULL, env=dict(env) if env is not None else None)
+        argv = list(argv)
+        argv[0] = shutil.which(argv[0]) or argv[0]  # Windows: finds npx.cmd for "npx", as a shell would
+        # Its own process group, so close() can kill a launcher (npx, uv run, a script) and the
+        # real server it started, not just the launcher (I4).
+        group = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if sys.platform == "win32"
+                 else {"start_new_session": True})
+        self.process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                        env=dict(env) if env is not None else None, **group)
         threading.Thread(target=self._pump, daemon=True).start()
 
     def _pump(self) -> None:
@@ -114,11 +123,25 @@ class StdioWire:
         return Reply(None, None)
 
     def close(self) -> None:
+        """Kill the server's whole process tree, bounded; never blocks on the reader thread."""
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(self.process.pid)], capture_output=True, timeout=30)
+        else:
+            try:
+                os.killpg(self.process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
         if self.process.poll() is None:
             self.process.kill()
-        self.process.wait(timeout=10)
-        for stream in (self.process.stdin, self.process.stdout):
-            stream.close()
+        try:
+            self.process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            self.process.stdin.close()
+        except OSError:
+            pass
+        # stdout is left to the daemon reader thread: closing it under a blocked readline can hang.
 
     def __enter__(self) -> StdioWire:
         return self
