@@ -5,12 +5,12 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**12 requirements, 12 traced: 52 requirement-test links.**
+**13 requirements, 13 traced: 53 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
-| Server | 7 | 32 | 5 |
+| Server | 8 | 33 | 5 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -26,3 +26,4 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | SRV-03 | high | Tool results are right against the world: filters, complete and ordered pagination, tampered cursors rejected, unknown IDs are tool errors, acknowledgement changes the world and is idempotent, a crash is -32603 without detail. | `test_list_meters_filters_by_site`<br>`test_readings_paginate_completely_in_order`<br>`test_bad_cursor_is_a_tool_error`<br>`test_list_alerts_filters`<br>`test_acknowledge_changes_the_world_and_is_idempotent`<br>`test_unknown_ids_are_tool_errors`<br>`test_tool_crash_is_internal_error` |
 | SRV-05 | medium | The reports://{name} template and each report are listed; a report reads back as its file text with text/markdown; an unknown or malformed name is -32602; the report files ship inside the package. | `test_reports_are_listed`<br>`test_report_reads_back_its_file`<br>`test_unknown_or_malformed_report_is_invalid_params`<br>`test_reports_ship_inside_the_package` |
 | SRV-07 | high | The server runs over stdio and Streamable HTTP (127.0.0.1 by default); on both transports and both revisions it lists the same tools, answers a valid call with schema-valid output, a bad argument with isError, and an unknown tool with -32602. | `test_cli_defaults_to_stdio_and_localhost`<br>`test_transport_behaves_like_in_process` |
+| SRV-08 | medium | A manual run connects a Claude client to the server over stdio and calls a tool; the screenshot is checked in under docs/evidence/ and listed in its README. | `test_manual_claude_screenshot_is_checked_in` |
