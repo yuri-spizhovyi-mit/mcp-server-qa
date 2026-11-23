@@ -7,7 +7,7 @@ Header" (an unknown method is HTTP 404 on 2026-07-28).
 
 from __future__ import annotations
 
-from mcpqa.expect import error_of
+from mcpqa.expect import SHOULD, error_of
 from mcpqa.plugin import not_applicable
 from mcpqa.protocol import MODERN, Session, modern_headers
 from mcpqa.wire import HttpWire
@@ -42,6 +42,7 @@ def test_unknown_method_is_32601(revision: str, session: Session) -> None:
 
 
 def test_unknown_tool_is_32602(revision: str, session: Session) -> None:
+    """SHOULD: the tools page gives an unknown tool as its example of a protocol error (PROTO-D5)."""
     if "tools" not in session.capabilities:
         not_applicable("the target declares no tools")
-    error_of(session.request("tools/call", {"name": "mcpqa-no-such-tool", "arguments": {}}), -32602)
+    error_of(session.request("tools/call", {"name": "mcpqa-no-such-tool", "arguments": {}}), -32602, SHOULD)

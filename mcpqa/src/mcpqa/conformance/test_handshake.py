@@ -29,7 +29,8 @@ def test_legacy_initialize(revision: str, session: Session, fresh_wire: Any) -> 
     result = result_of(initialize(fresh_wire, LEGACY))
     assert result.get("protocolVersion") == LEGACY
     info = result.get("serverInfo")
-    assert isinstance(info, dict) and isinstance(info.get("name"), str) and isinstance(info.get("version"), str), info
+    assert isinstance(info, dict) and isinstance(info.get("name"), str) and isinstance(info.get("version"), str), (
+        f"serverInfo must have a string name and version, got {info!r}")
     assert isinstance(result.get("capabilities"), dict)
 
 
@@ -53,7 +54,8 @@ def test_discover(revision: str, session: Session) -> None:
     """Servers MUST implement server/discover."""
     result = result_of(session.request("server/discover"))
     assert result.get("resultType") == "complete"
-    assert MODERN in (result.get("supportedVersions") or []), result.get("supportedVersions")
+    assert MODERN in (result.get("supportedVersions") or []), (
+        f"supportedVersions must include {MODERN}, got {result.get('supportedVersions')!r}")
     assert isinstance(result.get("capabilities"), dict)
 
 

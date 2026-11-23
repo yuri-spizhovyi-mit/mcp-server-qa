@@ -5,14 +5,14 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**31 requirements, 31 traced: 146 requirement-test links.**
+**31 requirements, 31 traced: 145 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
 | Server | 8 | 39 | 5 |
 | Auth | 9 | 49 | 7 |
-| Protocol | 9 | 38 | 6 |
+| Protocol | 9 | 37 | 6 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -41,8 +41,8 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | PROTO-09 | high | energy_mcp answers every stdio line that is not a valid message (-32700 for invalid JSON, -32600 otherwise, with the request's id when it has one) and rejects any cursor on a list method with -32602, where the bare SDK stays silent or ignores the cursor (F-13, F-14). | `test_f13_bare_stdio_drops_malformed_lines`<br>`test_f14_bare_list_methods_ignore_a_cursor`<br>`test_malformed_lines_get_an_answer`<br>`test_list_cursor_is_invalid_params`<br>`test_list_without_cursor_still_works` |
 | PROTO-01 | high | mcpqa is a pytest plugin that takes --target (a stdio JSON array or command, or an HTTP URL), a bearer token from the variable --token-env names, and --protocol-version; it speaks the protocol with its own client and imports neither mcp nor energy_mcp; a check whose precondition is missing skips as not applicable, with the reason. | `test_parse_target_forms`<br>`test_stdio_wire_exchanges_and_records_noise`<br>`test_wire_closes_its_process_on_error`<br>`test_silence_is_a_timeout`<br>`test_sse_reply_is_parsed`<br>`test_session_opens_both_revisions_over_stdio`<br>`test_session_opens_both_revisions_over_http`<br>`test_plugin_reports_not_applicable`<br>`test_plugin_requires_a_target`<br>`test_a_server_that_fails_everything_fails_the_run`<br>`test_a_wrong_http_path_fails_the_run`<br>`test_a_refused_token_is_one_clear_message`<br>`test_an_older_negotiated_version_is_not_applicable`<br>`test_an_explicit_revision_the_target_does_not_serve_is_an_error`<br>`test_a_stdio_target_that_cannot_start_is_one_clear_message`<br>`test_shell_form_rejects_windows_backslashes`<br>`test_json_that_is_not_a_message_is_noise`<br>`test_http_reply_is_bounded_even_if_the_stream_stays_open`<br>`test_http_reply_with_another_id_is_an_error`<br>`test_close_kills_a_launched_server_too`<br>`test_mcpqa_imports_no_mcp_sdk` |
 | PROTO-02 | high | On 2025-11-25, initialize returns the requested version, serverInfo and capabilities, and an unknown requested version gets another version the server serves; on 2026-07-28, server/discover lists 2026-07-28 and the capabilities, and an unsupported version is -32022 with supported and requested (HTTP 400). | `test_handshake_checks_catch_their_broken_copies` |
-| PROTO-03 | high | On 2026-07-28, a request without the _meta envelope is -32602 and, over HTTP, a header that does not match the body is -32020; both HTTP 400. | `test_http_checks_catch_their_broken_copies`<br>`test_envelope_checks_catch_their_broken_copies` |
-| PROTO-08 | high | mcpqa's conformance checks all pass on energy_mcp over stdio and HTTP on both revisions, except checks skipped as not applicable with a listed reason; every check has a broken copy, and each broken copy fails exactly its checks. | `test_clean_server_passes_over_stdio`<br>`test_clean_server_passes_over_http`<br>`test_every_broken_copy_is_tested` |
+| PROTO-03 | high | On 2026-07-28, a request without the _meta envelope is -32602 and, over HTTP, a header that does not match the body is -32020; both HTTP 400. | `test_envelope_checks_catch_their_broken_copies` |
+| PROTO-08 | high | mcpqa's conformance checks all pass on energy_mcp over stdio and HTTP on both revisions, except checks skipped as not applicable with a listed reason; every check has a broken copy, and each broken copy fails exactly its checks. | `test_clean_server_passes`<br>`test_every_broken_copy_is_tested`<br>`test_a_broken_copy_refuses_the_other_transport` |
 | PROTO-04 | medium | Every declared capability's list method answers and an undeclared one is -32601, on both revisions. | `test_capability_checks_catch_their_broken_copies` |
 | PROTO-05 | high | Invalid JSON is -32700 with id null; a non-request is -32600; an unknown method is -32601 (HTTP 404 on 2026-07-28); an unknown tool is -32602; on both revisions and transports. | `test_error_checks_catch_their_broken_copies`<br>`test_non_message_body_is_32600`<br>`test_a_client_response_is_still_handed_on` |
 | PROTO-06 | medium | Every declared list method paginates to an end without repeating an item, and an invalid cursor is -32602. | `test_pagination_checks_catch_their_broken_copies` |

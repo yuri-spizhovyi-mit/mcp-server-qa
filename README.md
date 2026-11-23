@@ -40,8 +40,10 @@ The tests mint their own tokens; see `tests/issuer.py`.
 `mcpqa` is a pytest plugin that checks a server's protocol conformance on both revisions (2025-11-25 and 2026-07-28). It speaks the protocol with its own client, not an SDK. Run it in Windows PowerShell, in the repo folder:
 
 ```powershell
-.\.venv\Scripts\python -m pytest --pyargs mcpqa.conformance -rs --target 'stdio:["C:\\path\\to\\python.exe", "-m", "energy_mcp"]'
+.\.venv\Scripts\python -m pytest --pyargs mcpqa.conformance -rs --% --target "stdio:[\"C:\\path\\to\\python.exe\", \"-m\", \"energy_mcp\"]"
 ```
+
+`--%` makes Windows PowerShell 5.1 pass the rest of the line unchanged; without it, 5.1 strips the inner quotes and the JSON breaks. In PowerShell 7.3 or later, `--target 'stdio:["C:\\path\\to\\python.exe", "-m", "energy_mcp"]'` works as written.
 
 - **Targets:**
   - `stdio:` followed by a JSON array, which is exact. Use this for Windows paths.

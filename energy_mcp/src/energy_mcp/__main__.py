@@ -49,6 +49,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.transport == "http" and not (args.public_key and args.issuer):
         parser.error("HTTP needs --public-key and --issuer (there is no unauthenticated HTTP mode)")
+    if args.variant and VARIANTS[args.variant].transport != args.transport:  # its bug is planted on one transport only
+        parser.error(f"--variant {args.variant} is a {VARIANTS[args.variant].transport} broken copy")
     if args.rate_limit < 1 or args.rate_window <= 0:
         parser.error("--rate-limit must be at least 1 and --rate-window above 0")
     return args

@@ -6,7 +6,7 @@ Spec: server utilities, "Pagination" (both revisions): the cursor is opaque, a m
 
 from __future__ import annotations
 
-from mcpqa.expect import error_of, result_of
+from mcpqa.expect import SHOULD, error_of, result_of
 from mcpqa.plugin import not_applicable
 from mcpqa.protocol import Session
 
@@ -47,5 +47,6 @@ def test_pagination_is_complete(revision: str, session: Session) -> None:
 
 
 def test_invalid_cursor_is_32602(revision: str, session: Session) -> None:
+    """SHOULD: "Invalid cursors SHOULD result in an error with code -32602" (PROTO-D5)."""
     for method, _, _ in declared_lists(session):
-        error_of(session.request(method, {"cursor": "mcpqa-invalid-cursor"}), -32602)
+        error_of(session.request(method, {"cursor": "mcpqa-invalid-cursor"}), -32602, SHOULD)

@@ -98,6 +98,27 @@ Entry format:
 - Held by: `tests/test_cli_auth.py::test_http_needs_key_and_issuer`,
   `tests/test_http_auth.py::test_scope_guard_holds_if_the_edge_lets_a_call_through`
 
+## PROTO-D5: What does mcpqa do with a rule the spec only recommends (SHOULD)?
+- Decision: `mcpqa` checks it and fails a server that breaks it, but the failure says so. It
+  starts `SHOULD (the spec recommends this; it does not require it):`, and the check's
+  docstring names the rule. Three checks are SHOULDs today:
+  - `test_invalid_cursor_is_32602` ("Invalid cursors SHOULD result in ... -32602").
+  - `test_unknown_tool_is_32602` (the tools page gives an unknown tool as its example of a
+    protocol error).
+  - The undeclared half of `test_declared_capabilities_work` (`-32601` for a method behind an
+    unadvertised capability: a 2026-07-28 schema example; 2025-11-25 doesn't say).
+
+  Every other check is a MUST, and its failures start `MUST:`.
+- Why: a server that breaks these confuses clients in practice (a corrupted cursor silently
+  restarts at page one; an unknown tool looks like a tool that ran), so a quality bar should
+  include them. But a reader must be able to tell "breaks the spec" from "doesn't follow its
+  advice", because the plain mcp 2.3.0 SDK fails all three (F-01, F-14). A separate,
+  non-failing severity (for example a `--strict` flag) is a possible later change; for now
+  the label does the job.
+- Held by: `tests/test_conformance.py::test_pagination_checks_catch_their_broken_copies`
+  (`accepts-any-cursor`), `tests/test_conformance.py::test_capability_checks_catch_their_broken_copies`
+  (`undeclared-tools`): their expected messages carry the SHOULD label.
+
 ## AUTH-D7: What does the HTTP edge do with a request it can't read for certain?
 - Decision: the edge decides on every request itself and hands the SDK only what it read for
   certain.

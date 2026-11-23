@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import socket
 import subprocess
@@ -249,34 +250,53 @@ def authenticated_http_server(tmp_path: Path, *extra: str) -> Iterator[tuple[str
 
 @dataclass
 class McpqaReport:
-    passed: set[str]
-    failed: set[str]
-    skipped: dict[str, str]
+    """One mcpqa run, per (check, revision): `outcomes` is passed / failed / skipped, `messages` the
+    failure or skip text. `passed`, `failed` and `skipped` group by check name."""
+
+    outcomes: dict[tuple[str, str], str]
+    messages: dict[tuple[str, str], str]
     output: str
 
+    @property
+    def failed(self) -> set[str]:
+        return {name for (name, _), outcome in self.outcomes.items() if outcome == "failed"}
 
-def run_mcpqa(pytester: Any, target: str, *extra: str, env: dict[str, str] | None = None) -> McpqaReport:
-    """Run mcpqa's conformance checks against `target` as an outsider would, in a clean pytest process.
+    @property
+    def passed(self) -> set[str]:
+        return {name for (name, _), outcome in self.outcomes.items() if outcome == "passed"} - self.failed
 
-    Results are read from a JUnit XML report and grouped by check name (a check that fails on
-    one revision counts as failed). `-c` points at an empty ini, so the repo's own pytest
-    settings play no part.
+    @property
+    def skipped(self) -> dict[str, str]:
+        return {name: self.messages[(name, rev)] for (name, rev), outcome in self.outcomes.items()
+                if outcome == "skipped" and name not in self.failed}
+
+    def runs(self, outcome: str) -> set[tuple[str, str]]:
+        return {key for key, value in self.outcomes.items() if value == outcome}
+
+
+def run_mcpqa(workdir: Path, target: str, *extra: str, env: dict[str, str] | None = None) -> McpqaReport:
+    """Run mcpqa's conformance checks against `target` as an outsider would, in a fresh pytest process.
+
+    Results come from a JUnit XML report. `-c` points at an empty ini in `workdir`, so the
+    repo's own pytest settings play no part. The process inherits the environment plus `env`.
     """
-    ini = pytester.makeini("[pytest]\n")
-    report = pytester.path / "mcpqa-report.xml"
-    for name, value in (env or {}).items():
-        pytester._monkeypatch.setenv(name, value)
-    result = pytester.runpytest_subprocess("-c", str(ini), "--pyargs", "mcpqa.conformance", "--target", target,
-                                           "--mcpqa-timeout", "5", "-p", "no:cacheprovider",
-                                           f"--junitxml={report}", *extra)
-    passed, failed, skipped = set(), set(), {}
+    workdir.mkdir(parents=True, exist_ok=True)
+    ini, report = workdir / "empty.ini", workdir / "mcpqa-report.xml"
+    ini.write_text("[pytest]\n", encoding="utf-8")
+    result = subprocess.run([sys.executable, "-m", "pytest", "-c", str(ini), "--rootdir", str(workdir),
+                             "--pyargs", "mcpqa.conformance", "--target", target, "--mcpqa-timeout", "5",
+                             "-p", "no:cacheprovider", f"--junitxml={report}", *extra],
+                            cwd=workdir, env={**os.environ, **(env or {})}, capture_output=True, text=True,
+                            timeout=900)
+    outcomes, messages = {}, {}
     for case in ElementTree.parse(report).getroot().iter("testcase"):
-        name = case.get("name", "").split("[", 1)[0]
-        if case.find("failure") is not None or case.find("error") is not None:
-            failed.add(name)
+        name, _, revision = case.get("name", "").partition("[")
+        key = (name, revision.rstrip("]"))
+        problem = case.find("failure") if case.find("failure") is not None else case.find("error")
+        if problem is not None:
+            outcomes[key], messages[key] = "failed", problem.get("message", "") + "\n" + (problem.text or "")
         elif (skip := case.find("skipped")) is not None:
-            skipped[name] = skip.get("message", "")
+            outcomes[key], messages[key] = "skipped", skip.get("message", "")
         else:
-            passed.add(name)
-    return McpqaReport(passed - failed, failed, {k: v for k, v in skipped.items() if k not in failed},
-                       "\n".join(result.outlines))
+            outcomes[key] = "passed"
+    return McpqaReport(outcomes, messages, result.stdout + result.stderr)
