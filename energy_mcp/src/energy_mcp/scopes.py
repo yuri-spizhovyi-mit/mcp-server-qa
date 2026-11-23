@@ -36,6 +36,8 @@ def is_known(scope: str) -> bool:
 
 def needed(method: Any, params: Any) -> frozenset[str]:
     """The scopes a call needs; empty for listing, unknown tools and every other method."""
+    if not isinstance(method, str):  # not a method at all; the SDK answers it (never hashed: lists crash `in`)
+        return frozenset()
     if method in METHOD_SCOPES:
         return frozenset({METHOD_SCOPES[method]})
     if method != "tools/call" or not isinstance(params, dict):

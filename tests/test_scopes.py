@@ -44,6 +44,10 @@ NEEDED = [
     ("ping", None, set()),
     ("initialize", {"protocolVersion": "2025-11-25"}, set()),
     (None, None, set()),
+    ([], None, set()),
+    ({}, None, set()),
+    (["tools/call"], call(ACK, {"alert_id": "ALR-0001"}), set()),
+    (5, None, set()),
 ]
 
 

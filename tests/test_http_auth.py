@@ -357,3 +357,12 @@ async def test_aborted_request_is_not_executed(edge: Edge, issuer: Issuer) -> No
         assert edge.world.alert("ALR-0001").status == "open"
         await drive(edge.app, token, [{"type": "http.request", "body": body, "more_body": False}])  # control
     assert edge.world.alert("ALR-0001").status == "acknowledged"
+
+
+@pytest.mark.req("AUTH-02")
+@pytest.mark.parametrize("method", [[], {}, ["tools/call"], 5, None])
+async def test_odd_method_without_token_is_401(edge: Edge, method: Any) -> None:
+    """Whatever `method` is, a request without a token is a 401, never a crash."""
+    async with running(edge.server), http(edge.app) as client:
+        response = await post(client, {"jsonrpc": "2.0", "id": 1, "method": method})
+    assert response.status_code == 401
