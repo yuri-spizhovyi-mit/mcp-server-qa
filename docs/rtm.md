@@ -5,14 +5,14 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**29 requirements, 29 traced: 129 requirement-test links.**
+**31 requirements, 31 traced: 131 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
 | Server | 8 | 39 | 5 |
 | Auth | 9 | 49 | 7 |
-| Protocol | 7 | 21 | 6 |
+| Protocol | 9 | 23 | 6 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -45,3 +45,5 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | PROTO-08 | high | mcpqa's conformance checks all pass on energy_mcp over stdio and HTTP on both revisions, except checks skipped as not applicable with a listed reason; every check has a broken copy, and each broken copy fails exactly its checks. | `test_clean_server_passes_over_stdio`<br>`test_every_broken_copy_is_tested` |
 | PROTO-04 | medium | Every declared capability's list method answers and an undeclared one is -32601, on both revisions. | `test_capability_checks_catch_their_broken_copies` |
 | PROTO-05 | high | Invalid JSON is -32700 with id null; a non-request is -32600; an unknown method is -32601 (HTTP 404 on 2026-07-28); an unknown tool is -32602; on both revisions and transports. | `test_error_checks_catch_their_broken_copies` |
+| PROTO-06 | medium | Every declared list method paginates to an end without repeating an item, and an invalid cursor is -32602. | `test_pagination_checks_catch_their_broken_copies` |
+| PROTO-07 | medium | A 1 MiB string argument gets a clean answer (a result or -32602, never -32603 or silence) and the server keeps answering; over stdio, stdout carries only MCP messages. | `test_payload_checks_catch_their_broken_copies` |

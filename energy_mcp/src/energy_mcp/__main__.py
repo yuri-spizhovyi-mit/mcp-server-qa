@@ -68,6 +68,8 @@ def main(argv: list[str] | None = None) -> None:
         if variant is None:
             run_stdio(build_server(world, identity=identity))
         else:
+            if variant.startup_stdout is not None:  # before the stdio transport claims stdout
+                print(variant.startup_stdout, flush=True)
             run_stdio(build_server(world, identity=identity, **variant.server_options()),
                       outgoing=variant.outgoing, answer_malformed=variant.answer_malformed)
         return

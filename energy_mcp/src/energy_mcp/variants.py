@@ -32,6 +32,7 @@ class Variant:
     answer_malformed: bool = True
     strict_unknown_tool: bool = True
     reject_list_cursors: bool = True
+    startup_stdout: str | None = None
 
     def server_options(self) -> dict[str, Any]:
         """Keyword arguments for `build_server`."""
@@ -101,6 +102,27 @@ def _without_tools_capability(message: Message) -> Message:
     return message
 
 
+async def _endless_tool_pages(ctx: Any, call_next: Callable[[Any], Awaitable[Any]]) -> Any:
+    """tools/list always says there is another page, and that page is the same one again."""
+    params = ctx.params if isinstance(ctx.params, dict) else {}
+    if ctx.method != "tools/list" or params.get("cursor") not in (None, "again"):
+        return await call_next(ctx)
+    ctx.params = {k: v for k, v in params.items() if k != "cursor"}
+    result = await call_next(ctx)
+    if isinstance(result, dict):
+        return {**result, "nextCursor": "again"}
+    return result.model_copy(update={"next_cursor": "again"})
+
+
+async def _crash_on_large_argument(ctx: Any, call_next: Callable[[Any], Awaitable[Any]]) -> Any:
+    params = ctx.params if isinstance(ctx.params, dict) else {}
+    arguments = params.get("arguments")
+    if ctx.method == "tools/call" and isinstance(arguments, dict) and any(
+            isinstance(v, str) and len(v) > 100_000 for v in arguments.values()):
+        raise MCPError(code=INTERNAL_ERROR, message="Internal error")
+    return await call_next(ctx)
+
+
 def _ignore_header_mismatch(app: ASGIApp) -> ASGIApp:
     """Overwrite Mcp-Method with the body's method before the server sees it, so no mismatch is ever found."""
 
@@ -166,4 +188,16 @@ VARIANTS: dict[str, Variant] = {
     "undeclared-tools": Variant(
         "tools are served but not declared in the capabilities", "PROTO-04",
         frozenset({"test_declared_capabilities_work"}), outgoing=_without_tools_capability),
+    "accepts-any-cursor": Variant(
+        "a cursor the server never issued is accepted and gives the first page (F-14)", "PROTO-06",
+        frozenset({"test_invalid_cursor_is_32602"}), reject_list_cursors=False),
+    "endless-pages": Variant(
+        "tools/list hands out a nextCursor that returns the same page forever", "PROTO-06",
+        frozenset({"test_pagination_is_complete"}), middleware=(_endless_tool_pages,)),
+    "crashes-on-large-argument": Variant(
+        "a tool call with a string argument over 100 000 characters is -32603", "PROTO-07",
+        frozenset({"test_large_argument_is_handled"}), middleware=(_crash_on_large_argument,)),
+    "prints-to-stdout": Variant(
+        "a startup line on stdout that is not an MCP message", "PROTO-07",
+        frozenset({"test_stdout_carries_only_messages"}), startup_stdout="energy_mcp starting"),
 }
