@@ -5,14 +5,14 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**31 requirements, 31 traced: 135 requirement-test links.**
+**31 requirements, 31 traced: 142 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
 | Server | 8 | 39 | 5 |
 | Auth | 9 | 49 | 7 |
-| Protocol | 9 | 27 | 6 |
+| Protocol | 9 | 34 | 6 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -39,7 +39,7 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | AUTH-06 | medium | Over HTTP, each principal gets limit authenticated requests per window on the server's clock; the next one gets 429 with Retry-After, before scope checks and before the server runs; the window resets on the clock; a new token for the same principal does not reset it; other principals are unaffected. | `test_limiter_counts_and_resets`<br>`test_call_n_plus_one_is_429_and_resets_on_the_clock`<br>`test_new_token_same_principal_stays_limited`<br>`test_other_principal_unaffected`<br>`test_refused_scope_calls_count`<br>`test_limited_call_never_reaches_the_server`<br>`test_unauthenticated_requests_are_not_counted` |
 | AUTH-09 | high | --transport http will not start without a public key and issuer; a real HTTP server process refuses a request without a token and serves one with a valid token; a real stdio process applies ENERGY_MCP_SCOPES. | `test_http_needs_key_and_issuer`<br>`test_cli_hands_uvicorn_the_edge`<br>`test_http_process_refuses_without_token` |
 | PROTO-09 | high | energy_mcp answers every stdio line that is not a valid message (-32700 for invalid JSON, -32600 otherwise, with the request's id when it has one) and rejects any cursor on a list method with -32602, where the bare SDK stays silent or ignores the cursor (F-13, F-14). | `test_f13_bare_stdio_drops_malformed_lines`<br>`test_f14_bare_list_methods_ignore_a_cursor`<br>`test_malformed_lines_get_an_answer`<br>`test_list_cursor_is_invalid_params`<br>`test_list_without_cursor_still_works` |
-| PROTO-01 | high | mcpqa is a pytest plugin that takes --target (a stdio JSON array or command, or an HTTP URL), a bearer token from the variable --token-env names, and --protocol-version; it speaks the protocol with its own client and imports neither mcp nor energy_mcp; a check whose precondition is missing skips as not applicable, with the reason. | `test_parse_target_forms`<br>`test_stdio_wire_exchanges_and_records_noise`<br>`test_wire_closes_its_process_on_error`<br>`test_silence_is_a_timeout`<br>`test_sse_reply_is_parsed`<br>`test_session_opens_both_revisions_over_stdio`<br>`test_session_opens_both_revisions_over_http`<br>`test_plugin_reports_not_applicable`<br>`test_plugin_requires_a_target`<br>`test_mcpqa_imports_no_mcp_sdk` |
+| PROTO-01 | high | mcpqa is a pytest plugin that takes --target (a stdio JSON array or command, or an HTTP URL), a bearer token from the variable --token-env names, and --protocol-version; it speaks the protocol with its own client and imports neither mcp nor energy_mcp; a check whose precondition is missing skips as not applicable, with the reason. | `test_parse_target_forms`<br>`test_stdio_wire_exchanges_and_records_noise`<br>`test_wire_closes_its_process_on_error`<br>`test_silence_is_a_timeout`<br>`test_sse_reply_is_parsed`<br>`test_session_opens_both_revisions_over_stdio`<br>`test_session_opens_both_revisions_over_http`<br>`test_plugin_reports_not_applicable`<br>`test_plugin_requires_a_target`<br>`test_a_server_that_fails_everything_fails_the_run`<br>`test_a_wrong_http_path_fails_the_run`<br>`test_a_refused_token_is_one_clear_message`<br>`test_an_older_negotiated_version_is_not_applicable`<br>`test_an_explicit_revision_the_target_does_not_serve_is_an_error`<br>`test_a_stdio_target_that_cannot_start_is_one_clear_message`<br>`test_shell_form_rejects_windows_backslashes`<br>`test_mcpqa_imports_no_mcp_sdk` |
 | PROTO-02 | high | On 2025-11-25, initialize returns the requested version, serverInfo and capabilities, and an unknown requested version gets another version the server serves; on 2026-07-28, server/discover lists 2026-07-28 and the capabilities, and an unsupported version is -32022 with supported and requested (HTTP 400). | `test_handshake_checks_catch_their_broken_copies` |
 | PROTO-03 | high | On 2026-07-28, a request without the _meta envelope is -32602 and, over HTTP, a header that does not match the body is -32020; both HTTP 400. | `test_http_checks_catch_their_broken_copies`<br>`test_envelope_checks_catch_their_broken_copies` |
 | PROTO-08 | high | mcpqa's conformance checks all pass on energy_mcp over stdio and HTTP on both revisions, except checks skipped as not applicable with a listed reason; every check has a broken copy, and each broken copy fails exactly its checks. | `test_clean_server_passes_over_stdio`<br>`test_clean_server_passes_over_http`<br>`test_every_broken_copy_is_tested` |

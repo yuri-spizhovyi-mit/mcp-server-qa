@@ -42,6 +42,8 @@ def parse_target(text: str, *, token_env: str | None = None, env: Mapping[str, s
             if not isinstance(argv, list) or not argv or not all(isinstance(a, str) and a for a in argv):
                 raise _bad("the stdio JSON array must hold non-empty strings")
         else:
+            if "\\" in rest:  # shlex's POSIX rules drop unquoted backslashes: C:\x becomes C:x (I6)
+                raise _bad("backslashes are dropped by shell splitting; use the JSON array form for Windows paths")
             argv = shlex.split(rest)
         if not argv:
             raise _bad("no stdio command")

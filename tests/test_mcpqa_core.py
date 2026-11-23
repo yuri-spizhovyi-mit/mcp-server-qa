@@ -145,3 +145,70 @@ def test_plugin_requires_a_target(pytester: pytest.Pytester) -> None:
     result = pytester.runpytest_subprocess("-p", "no:cacheprovider")
     result.assert_outcomes(errors=1)
     result.stdout.fnmatch_lines(["*mcpqa needs --target*"])
+
+
+FAKE = Path(__file__).with_name("fake_stdio_server.py")
+
+
+def fake_target(mode: str) -> str:
+    return "stdio:" + json.dumps([sys.executable, str(FAKE), mode])
+
+
+def run_raw(pytester: pytest.Pytester, *args: str) -> pytest.RunResult:
+    ini = pytester.makeini("[pytest]\n")
+    return pytester.runpytest_subprocess("-c", str(ini), "--pyargs", "mcpqa.conformance", "--mcpqa-timeout", "5",
+                                         "-p", "no:cacheprovider", "-rA", *args)
+
+
+def test_a_server_that_fails_everything_fails_the_run(pytester: pytest.Pytester) -> None:
+    """C1: an error to every request is a broken server, not one that 'doesn't apply'."""
+    result = run_raw(pytester, "--target", fake_target("internal"))
+    assert result.ret != 0
+    outcomes = result.parseoutcomes()
+    assert outcomes.get("failed", 0) + outcomes.get("errors", 0) > 0 and not outcomes.get("passed")
+
+
+def test_a_wrong_http_path_fails_the_run(pytester: pytest.Pytester, tmp_path: Path) -> None:
+    with authenticated_http_server(tmp_path, "--rate-limit", "10000") as (url, token):
+        pytester._monkeypatch.setenv("MCPQA_TOKEN", token)
+        result = run_raw(pytester, "--target", url.replace("/mcp", "/nope"), "--token-env", "MCPQA_TOKEN")
+    assert result.ret != 0
+    assert not result.parseoutcomes().get("passed")
+
+
+def test_a_refused_token_is_one_clear_message(pytester: pytest.Pytester, tmp_path: Path) -> None:
+    """I5: a 401 stops the run with one message naming --token-env, not a traceback per check."""
+    with authenticated_http_server(tmp_path) as (url, _):
+        result = run_raw(pytester, "--target", url)
+    assert result.ret != 0
+    text = "\n".join(result.outlines + result.errlines)
+    assert "HTTP 401" in text and "--token-env" in text
+    assert "AttributeError" not in text and "Traceback" not in text
+
+
+def test_an_older_negotiated_version_is_not_applicable(pytester: pytest.Pytester) -> None:
+    """I1: a correct 2025-06-18 server doesn't serve 2025-11-25; it isn't broken. Serving neither revision
+    mcpqa checks still fails the run, with one clear message."""
+    result = run_raw(pytester, "--target", fake_target("legacy-old"))
+    text = "\n".join(result.outlines)
+    assert not result.parseoutcomes().get("failed")
+    assert "negotiated 2025-06-18" in text
+    assert result.ret != 0 and "serves none of the revisions" in "\n".join(result.outlines + result.errlines)
+
+
+def test_an_explicit_revision_the_target_does_not_serve_is_an_error(pytester: pytest.Pytester) -> None:
+    result = run_raw(pytester, "--target", fake_target("legacy-only"), "--protocol-version", "2026-07-28")
+    assert result.ret != 0
+    assert "does not serve 2026-07-28" in "\n".join(result.outlines + result.errlines)
+
+
+def test_a_stdio_target_that_cannot_start_is_one_clear_message(pytester: pytest.Pytester) -> None:
+    result = run_raw(pytester, "--target", 'stdio:["mcpqa-no-such-program-xyz"]')
+    text = "\n".join(result.outlines + result.errlines)
+    assert result.ret != 0 and "could not start" in text and "Traceback" not in text
+
+
+def test_shell_form_rejects_windows_backslashes() -> None:
+    """I6: shlex drops unquoted backslashes; refuse instead of running a mangled path."""
+    with pytest.raises(ValueError, match="JSON array"):
+        parse_target(r"stdio:C:\Users\me\python.exe -m energy_mcp")

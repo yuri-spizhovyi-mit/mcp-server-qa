@@ -21,12 +21,31 @@ REVISIONS = (LEGACY, MODERN)
 CLIENT_INFO = {"name": "mcpqa", "version": __version__}
 
 
+# Answers that mean "this revision is not served here", as opposed to "this server is broken" (C1).
+# A 2026-07-28 server refuses an unknown version with -32022; an older server doesn't know
+# server/discover (-32601). A 2025-11-25 refusal of initialize uses -32022, -32601 or the
+# lifecycle page's -32602 ("Unsupported protocol version").
+NOT_SERVED = {MODERN: frozenset({-32022, -32601}), LEGACY: frozenset({-32022, -32601, -32602})}
+
+
 class ProtocolError(Exception):
-    def __init__(self, reply: Reply) -> None:
+    """The server answered something other than what the protocol requires."""
+
+    def __init__(self, reply: Reply, reason: str | None = None) -> None:
         self.reply = reply
-        error = (reply.message or {}).get("error") or {}
-        self.code = error.get("code")
-        super().__init__(f"the server answered {reply.status or ''} {error or reply.message!r}".strip())
+        error = (reply.message or {}).get("error")
+        self.code = error.get("code") if isinstance(error, dict) else None
+        shown = error if error is not None else reply.message
+        status = f"HTTP {reply.status} " if reply.status is not None else ""
+        super().__init__(reason or f"the server answered {status}{shown!r}")
+
+
+class NotServed(ProtocolError):
+    """The target doesn't serve this revision: its checks are not applicable."""
+
+
+class AuthRefused(ProtocolError):
+    """HTTP 401 or 403: the bearer token is missing or refused."""
 
 
 def envelope(version: str = MODERN) -> dict[str, Any]:
@@ -66,14 +85,19 @@ class Session:
         else:
             reply = self.wire.exchange({"jsonrpc": "2.0", "id": self.next_id(), "method": "initialize", "params": {
                 "protocolVersion": LEGACY, "capabilities": {}, "clientInfo": CLIENT_INFO}})
+        if reply.status in (401, 403):
+            raise AuthRefused(reply, f"HTTP {reply.status}")
         result = (reply.message or {}).get("result")
         if not isinstance(result, dict):
-            raise ProtocolError(reply)
+            error = ProtocolError(reply)
+            raise NotServed(reply, str(error)) if error.code in NOT_SERVED[self.revision] else error
+        if self.revision == LEGACY and result.get("protocolVersion") != LEGACY:
+            raise NotServed(reply, f"initialize negotiated {result.get('protocolVersion')}")
         self.capabilities = result.get("capabilities") if isinstance(result.get("capabilities"), dict) else {}
         if self.revision == LEGACY:
             if isinstance(self.wire, HttpWire):
                 session_id = reply.headers.get("mcp-session-id")
-                self.wire.session_headers = {"mcp-protocol-version": LEGACY,
+                self.wire.session_headers = {"mcp-protocol-version": result["protocolVersion"],
                                              **({"mcp-session-id": session_id} if session_id else {})}
             self.wire.notify({"jsonrpc": "2.0", "method": "notifications/initialized"})
         return result

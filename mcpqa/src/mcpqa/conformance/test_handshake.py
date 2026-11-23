@@ -12,7 +12,7 @@ import pytest
 
 from mcpqa.expect import error_of, result_of
 from mcpqa.plugin import not_applicable
-from mcpqa.protocol import CLIENT_INFO, LEGACY, MODERN, REVISIONS, Session, envelope, modern_headers
+from mcpqa.protocol import CLIENT_INFO, LEGACY, MODERN, Session, envelope, modern_headers
 from mcpqa.wire import HttpWire, Reply
 
 UNKNOWN_VERSION = "1900-01-01"
@@ -34,10 +34,18 @@ def test_legacy_initialize(revision: str, session: Session, fresh_wire: Any) -> 
 
 
 @pytest.mark.mcpqa_revisions(LEGACY)
-def test_legacy_negotiates_unknown_version(revision: str, session: Session, fresh_wire: Any) -> None:
-    """PROTO-D2: an unsupported requested version MUST get "another protocol version it supports"."""
-    result = result_of(initialize(fresh_wire, UNKNOWN_VERSION))
-    assert result.get("protocolVersion") in REVISIONS, f"answered {result.get('protocolVersion')!r}"
+def test_legacy_negotiates_unknown_version(revision: str, session: Session, new_wire: Any) -> None:
+    """PROTO-D2: an unsupported requested version MUST get "another protocol version it supports".
+
+    Any version may come back (a server can serve versions mcpqa doesn't know), but not the
+    impossible one that was asked for, and asking again for the version it named must give
+    that same version: proof that the server serves it.
+    """
+    answered = result_of(initialize(new_wire(), UNKNOWN_VERSION)).get("protocolVersion")
+    assert isinstance(answered, str) and answered, f"no protocolVersion in the answer: {answered!r}"
+    assert answered != UNKNOWN_VERSION, f"the server echoed {UNKNOWN_VERSION}, a version no one serves"
+    again = result_of(initialize(new_wire(), answered)).get("protocolVersion")
+    assert again == answered, f"the server named {answered} but answers {again!r} when asked for it"
 
 
 @pytest.mark.mcpqa_revisions(MODERN)
