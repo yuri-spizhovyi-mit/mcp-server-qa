@@ -30,7 +30,9 @@ Entry format:
   and clients treat the challenge's `scope` as authoritative for a step-up. Refusing before
   the SDK means a refused call can never reach a tool. A tool error would let the model read
   it, but no client could use it to ask for more scope.
-- Held by: (Task 4)
+- Held by: `tests/test_http_auth.py::test_each_call_needs_its_scope`,
+  `tests/test_http_auth.py::test_refused_calls_leave_the_world_unchanged`,
+  `tests/test_http_auth.py::test_challenge_never_carries_caller_text`
 
 ## AUTH-D2: What does a rate-limited call return?
 - Decision: over HTTP, 429 with `Retry-After: <seconds, rounded up>` and a JSON body
@@ -42,7 +44,9 @@ Entry format:
   standard and tells a client exactly when to retry. Counting per principal means minting a
   fresh token doesn't reset the window. Unauthenticated requests (401) are not counted; that
   flood case belongs to M5's rate-limit abuse tests.
-- Held by: (Task 5)
+- Held by: `tests/test_rate_limit.py::test_call_n_plus_one_is_429_and_resets_on_the_clock`,
+  `tests/test_rate_limit.py::test_new_token_same_principal_stays_limited`,
+  `tests/test_rate_limit.py::test_unauthenticated_requests_are_not_counted`
 
 ## AUTH-D3: Who is the caller without HTTP, and how is a missing scope refused there?
 - Decision: stdio (and the in-process server) runs as `Identity(operator, scopes)` from
@@ -56,7 +60,9 @@ Entry format:
   default means a server started by a desktop client can't write until someone says so. A
   typo in a scope name should stop the server, not silently grant less. A tool error is what
   the model can read; there is no HTTP status on stdio.
-- Held by: (Task 3)
+- Held by: `tests/test_scopes.py::test_identity_from_env`,
+  `tests/test_scopes.py::test_guard_refuses_without_scope_in_process`,
+  `tests/test_cli_auth.py::test_stdio_process_is_read_only_by_default`
 
 ## AUTH-D4: Which scopes exist, and which scope implies which?
 - Decision: `meters:read` (`list_meters`, `get_readings`), `alerts:read` (`list_alerts`, the
@@ -67,7 +73,8 @@ Entry format:
 - Why: the 2026-07-28 spec says servers MUST account for scope hierarchies. Per-alert scopes
   are how a confused deputy is stopped in code (plan, M5). Deriving the per-alert scope only
   from an ID that matches `ALR-[0-9]{4}` keeps caller text out of the challenge header.
-- Held by: (Task 3)
+- Held by: `tests/test_scopes.py::test_needed_scopes_per_method`, `tests/test_scopes.py::test_hierarchy`,
+  `tests/test_http_auth.py::test_per_alert_token_over_http`
 
 ## AUTH-D5: Which tokens are accepted?
 - Decision: RS256 only, signed by the configured public key, header `typ` `at+jwt` or
@@ -79,7 +86,8 @@ Entry format:
   stops an ID token being replayed as an access token. `sub` becomes `acknowledged_by`, which
   other callers' models read, so it is held to a plain format. No leeway because the clock is
   ours.
-- Held by: (Task 2)
+- Held by: `tests/test_tokens.py::test_bad_tokens_are_rejected`,
+  `tests/test_tokens.py::test_expiry_follows_the_injected_clock`
 
 ## AUTH-D6: Can the server run over HTTP without auth?
 - Decision: no. `--transport http` refuses to start without `--public-key` and `--issuer`.
@@ -87,7 +95,8 @@ Entry format:
   bypassed, `ScopeGuard` would refuse every call.
 - Why: an unauthenticated mode that exists gets used. Failing closed is a guardrail in code,
   not a sentence in the README.
-- Held by: (Task 6)
+- Held by: `tests/test_cli_auth.py::test_http_needs_key_and_issuer`,
+  `tests/test_http_auth.py::test_scope_guard_holds_if_the_edge_lets_a_call_through`
 
 ## SRV-D1: What does a call with arguments that break the tool's schema return?
 - Decision: a tool execution error (`isError: true`), as the spec lists input validation
