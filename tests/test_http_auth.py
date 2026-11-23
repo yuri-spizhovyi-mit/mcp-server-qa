@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+import anyio
 import pytest
 from mcp import Client
 
@@ -316,3 +317,43 @@ async def test_every_path_but_metadata_needs_a_token(edge: Edge) -> None:
         for path in ("/mcp/", "/", "/anything"):
             assert (await client.post(path, json=rpc("tools/list"))).status_code == 401, path
         assert (await client.get("/mcp")).status_code == 401
+
+
+async def drive(app: Any, token: str, messages: list[dict]) -> list[dict]:
+    """Call the ASGI app directly with exactly these request messages (a raw client that can hang up)."""
+    headers = {"host": "127.0.0.1:8000", "authorization": f"Bearer {token}", "content-type": "application/json",
+               "accept": "application/json, text/event-stream", **modern_headers("tools/call", "acknowledge_alert")}
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "scheme": "http",
+             "path": "/mcp", "raw_path": b"/mcp", "query_string": b"", "root_path": "",
+             "headers": [(k.encode(), v.encode()) for k, v in headers.items()],
+             "client": ("127.0.0.1", 50000), "server": ("127.0.0.1", 8000)}
+    pending, sent, answered = list(messages), [], anyio.Event()
+
+    async def receive() -> dict:
+        if pending:
+            return pending.pop(0)
+        await answered.wait()  # like a server: the connection closes after the response, not before
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+        if message["type"] == "http.response.body" and not message.get("more_body", False):
+            answered.set()
+
+    with anyio.fail_after(10):
+        await app(scope, receive, send)
+    return sent
+
+
+@pytest.mark.req("AUTH-04")
+async def test_aborted_request_is_not_executed(edge: Edge, issuer: Issuer) -> None:
+    """A client that hangs up mid-body sent no request: the edge must not replay half of one as complete."""
+    body = json.dumps(rpc("tools/call", {"name": "acknowledge_alert", "arguments": {"alert_id": "ALR-0001"},
+                                         "_meta": ENVELOPE})).encode()
+    token = issuer.mint(scope="alerts:write")
+    async with running(edge.server):
+        await drive(edge.app, token, [{"type": "http.request", "body": body, "more_body": True},
+                                      {"type": "http.disconnect"}])
+        assert edge.world.alert("ALR-0001").status == "open"
+        await drive(edge.app, token, [{"type": "http.request", "body": body, "more_body": False}])  # control
+    assert edge.world.alert("ALR-0001").status == "acknowledged"

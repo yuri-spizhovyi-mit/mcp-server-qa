@@ -5,13 +5,13 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**22 requirements, 22 traced: 106 requirement-test links.**
+**22 requirements, 22 traced: 107 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
 | Server | 8 | 39 | 5 |
-| Auth | 9 | 47 | 7 |
+| Auth | 9 | 48 | 7 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -31,7 +31,7 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | AUTH-01 | high | A bearer token is accepted only when it is an RS256 at+jwt signed by the configured key, with the configured issuer and audience, every RFC 9068 required claim, exp/iat/nbf valid on the server's clock without leeway, and well-formed sub and client_id; anything else, including garbage, is rejected without an exception. | `test_f09_sdk_checks_expiry_on_the_wall_clock`<br>`test_valid_token_is_accepted`<br>`test_bad_tokens_are_rejected`<br>`test_audience_list_with_us_is_accepted`<br>`test_expiry_follows_the_injected_clock` |
 | AUTH-02 | high | Over HTTP, a request without a usable bearer token gets 401 with WWW-Authenticate: Bearer carrying resource_metadata and scope; a missing token has no error code, an invalid or expired one has error="invalid_token"; a call without its scope gets 403 insufficient_scope with the needed scope and resource_metadata; challenges never carry caller text. | `test_missing_token_challenge`<br>`test_credentials_not_in_a_bearer_header_count_as_missing`<br>`test_invalid_tokens_get_invalid_token`<br>`test_valid_token_calls_tools_on_both_revisions`<br>`test_challenge_never_carries_caller_text`<br>`test_every_path_but_metadata_needs_a_token`<br>`test_f10_sdk_missing_token_says_invalid_token`<br>`test_f11_sdk_challenges_carry_no_scope` |
 | AUTH-03 | medium | RFC 9728 metadata is served without auth at /.well-known/oauth-protected-resource/mcp with resource, authorization_servers = [issuer], scopes_supported = the four base scopes and bearer_methods_supported = [header]. | `test_metadata_document`<br>`test_f12_sdk_metadata_scopes_are_the_required_scopes` |
-| AUTH-04 | high | Every tool, resource read and prompt needs its scope (meters:read, alerts:read, reports:read, alerts:write) on every transport; listing needs none; a refused call never changes the world. | `test_each_call_needs_its_scope`<br>`test_listing_needs_only_a_valid_token`<br>`test_refused_calls_leave_the_world_unchanged`<br>`test_unreadable_bodies_cannot_write`<br>`test_content_type_does_not_hide_a_call`<br>`test_a_complete_raw_request_gets_through`<br>`test_scope_guard_holds_if_the_edge_lets_a_call_through`<br>`test_body_over_the_limit_is_refused`<br>`test_needed_scopes_per_method`<br>`test_guard_refuses_without_scope_in_process`<br>`test_listing_needs_no_scope_in_process`<br>`test_scope_is_checked_before_arguments` |
+| AUTH-04 | high | Every tool, resource read and prompt needs its scope (meters:read, alerts:read, reports:read, alerts:write) on every transport; listing needs none; a refused call never changes the world. | `test_each_call_needs_its_scope`<br>`test_listing_needs_only_a_valid_token`<br>`test_refused_calls_leave_the_world_unchanged`<br>`test_unreadable_bodies_cannot_write`<br>`test_content_type_does_not_hide_a_call`<br>`test_a_complete_raw_request_gets_through`<br>`test_scope_guard_holds_if_the_edge_lets_a_call_through`<br>`test_body_over_the_limit_is_refused`<br>`test_aborted_request_is_not_executed`<br>`test_needed_scopes_per_method`<br>`test_guard_refuses_without_scope_in_process`<br>`test_listing_needs_no_scope_in_process`<br>`test_scope_is_checked_before_arguments` |
 | AUTH-05 | high | alerts:write:<alert_id> lets a caller acknowledge that alert only; alerts:write covers every alert; a malformed or missing alert_id needs alerts:write. | `test_per_alert_token_over_http`<br>`test_hierarchy`<br>`test_per_alert_identity_in_process` |
 | AUTH-07 | high | Without HTTP, the identity comes from ENERGY_MCP_SCOPES (default read-only) and ENERGY_MCP_OPERATOR; unknown scopes or a malformed operator are refused at startup; the acknowledging operator is recorded. | `test_bad_env_identity_stops_stdio`<br>`test_stdio_process_is_read_only_by_default`<br>`test_stdio_process_with_write_scope_records_operator`<br>`test_identity_from_env`<br>`test_in_process_default_is_read_only` |
 | AUTH-08 | high | Over HTTP, the caller is the token's principal: a session opened by one principal answers 404 to another, and acknowledge_alert records the token's sub. | `test_acknowledged_by_is_the_token_subject`<br>`test_session_belongs_to_its_principal` |

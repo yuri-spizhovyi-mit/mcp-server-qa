@@ -36,6 +36,7 @@ from energy_mcp.world import World
 
 MAX_BODY = 4 * 1024 * 1024
 UNREADABLE = object()  # a body that is not one well-formed JSON object
+DISCONNECTED = object()  # the client hung up before the body was complete
 
 
 def metadata_url(resource_url: str) -> str:
@@ -88,6 +89,8 @@ class AuthEdge:
         body = b""
         if scope["method"] == "POST":
             body = await self._read_body(receive)
+            if body is DISCONNECTED:  # nobody is listening, and half a request is no request
+                return
             if body is None:
                 await _respond(send, 413, {"error": "too_large", "error_description": "The request body is too large"})
                 return
@@ -114,12 +117,12 @@ class AuthEdge:
             return
         await self._hand_on(scope, receive, send, body, token)
 
-    async def _read_body(self, receive: Receive) -> bytes | None:
+    async def _read_body(self, receive: Receive) -> bytes | object | None:
         chunks, size = [], 0
         while True:
             message = await receive()
             if message["type"] == "http.disconnect":
-                return b"".join(chunks)
+                return DISCONNECTED
             chunk = message.get("body", b"")
             size += len(chunk)
             if size > self.max_body:
