@@ -19,7 +19,8 @@ Entry format:
   `{"content": [{"type": "text", "text": "Unknown tool: nosuch"}], "isError": true}` on both
   2025-11-25 and 2026-07-28. The spec (server/tools, "Error Handling") lists unknown tools under
   protocol errors, with `-32602` in its example.
-- Status: open in the SDK; worked around in `energy_mcp` (M1, Task 4).
+- Status: open in the SDK (still pinned by `tests/test_sdk_findings.py`); worked around in
+  `energy_mcp/guard.py`, held by `tests/test_arguments.py` (24 of its 25 cases fail with the guard removed).
 
 ## F-02: The SDK accepts arguments that its own published schema forbids
 - Found by: the M1 SDK spike; pinned by
@@ -28,7 +29,8 @@ Entry format:
   the bare server accepts `{"n": "2"}` and `{"n": true}` (pydantic lax mode) and silently drops
   `{"zzz": 1}`. The spec (server/tools, "Security Considerations"): "Servers MUST: Validate all
   tool inputs". A client that trusts the schema and one that doesn't get different behaviour.
-- Status: open in the SDK; worked around in `energy_mcp` (M1, Task 4).
+- Status: open in the SDK (still pinned by `tests/test_sdk_findings.py`); worked around in
+  `energy_mcp/guard.py`, held by `tests/test_arguments.py` (24 of its 25 cases fail with the guard removed).
 
 ## F-03: The SDK answers a missing prompt argument with code 0 or -32603
 - Found by: the M1 SDK spike; pinned by

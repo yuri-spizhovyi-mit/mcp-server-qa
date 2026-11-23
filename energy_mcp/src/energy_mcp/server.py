@@ -12,7 +12,7 @@ import functools
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -21,13 +21,19 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import ToolAnnotations
 from mcp_types.jsonrpc import INTERNAL_ERROR
 
+from pydantic import Field
+
 from energy_mcp import __version__
+from energy_mcp.guard import ArgumentGuard
 from energy_mcp.models import Alert, AlertList, MeterList, ReadingPage
 from energy_mcp.world import TIME_FORMAT, World, build_world
 
 logger = logging.getLogger("energy_mcp")
 
 TOOL_NAMES = ("list_meters", "get_readings", "list_alerts", "acknowledge_alert")
+SiteId = Annotated[str, Field(pattern=r"^SITE-\d{2}$")]
+MeterId = Annotated[str, Field(pattern=r"^MTR-\d{4}$")]
+AlertId = Annotated[str, Field(pattern=r"^ALR-\d{4}$")]
 READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 ACKNOWLEDGE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 
@@ -70,10 +76,11 @@ def _offset(cursor: str, meter_id: str, size: int) -> int:
 
 
 def _tools(world: World, clock: Callable[[], datetime], operator: str) -> list[Tool]:
-    def list_meters(site_id: str | None = None) -> MeterList:
+    def list_meters(site_id: SiteId | None = None) -> MeterList:
         return MeterList(meters=[m for m in world.meters if site_id is None or m.site_id == site_id])
 
-    def get_readings(meter_id: str, limit: int = 24, cursor: str | None = None) -> ReadingPage:
+    def get_readings(meter_id: MeterId, limit: Annotated[int, Field(ge=1, le=168)] = 24,
+                     cursor: str | None = None) -> ReadingPage:
         series = world.readings.get(meter_id)
         if series is None:
             raise ToolError(f"Unknown meter {meter_id}")
@@ -82,18 +89,18 @@ def _tools(world: World, clock: Callable[[], datetime], operator: str) -> list[T
         next_cursor = _cursor(meter_id, end) if end < len(series) else None
         return ReadingPage(meter_id=meter_id, readings=series[start:end], next_cursor=next_cursor)
 
-    def list_alerts(status: Literal["open", "acknowledged"] | None = None, meter_id: str | None = None) -> AlertList:
+    def list_alerts(status: Literal["open", "acknowledged"] | None = None, meter_id: MeterId | None = None) -> AlertList:
         return AlertList(alerts=[
             a for a in world.alerts
             if (status is None or a.status == status) and (meter_id is None or a.meter_id == meter_id)
         ])
 
-    def acknowledge_alert(alert_id: str) -> Alert:
+    def acknowledge_alert(alert_id: AlertId) -> Alert:
         if world.alert(alert_id) is None:
             raise ToolError(f"Unknown alert {alert_id}")
         return world.acknowledge(alert_id, by=operator, at=clock().strftime(TIME_FORMAT))
 
-    # Argument patterns and ranges live in the schemas (Task 4 publishes and enforces them).
+    # Patterns and ranges are published in each inputSchema and enforced by the guard.
     specs = [
         (list_meters, READ_ONLY,
          "List the electricity meters, optionally only those at one site (site_id like SITE-01)."),
@@ -121,4 +128,5 @@ def build_server(world: World | None = None, *, clock: Callable[[], datetime] = 
     world = build_world() if world is None else world
     tools = _tools(world, clock, operator)
     assert tuple(t.name for t in tools) == TOOL_NAMES
-    return MCPServer("energy-mcp", version=__version__, tools=tools)
+    guard = ArgumentGuard({t.name: t.parameters for t in tools})
+    return MCPServer("energy-mcp", version=__version__, tools=tools, middleware=[guard])

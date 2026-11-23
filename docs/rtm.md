@@ -5,12 +5,12 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**10 requirements, 10 traced: 38 requirement-test links.**
+**10 requirements, 10 traced: 43 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
-| Server | 5 | 18 | 4 |
+| Server | 5 | 23 | 4 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -19,7 +19,7 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | ENV-03 | medium | Installed versions equal the exact pins in requirements.txt, and the MCP SDK is 2.3.0 with the v2 API (MCPServer, Client) this plan is written against. | `test_installed_versions_match_pins` |
 | ENV-04 | high | Traceability: every test cites a catalogued requirement, every catalogued requirement has a test, catalogue IDs are unique and well-formed, and docs/rtm.* is current (CRLF checkouts and BOM catalogues included). | `test_complete_repo_has_no_problems`<br>`test_test_without_req_is_reported`<br>`test_uncatalogued_id_is_reported`<br>`test_requirement_without_test_is_reported`<br>`test_stale_matrix_is_reported`<br>`test_crlf_checkout_is_not_stale`<br>`test_catalogue_with_bom_is_read`<br>`test_duplicate_and_malformed_ids_are_reported`<br>`test_subfolder_class_and_async_tests_are_traced`<br>`test_nested_test_classes_are_traced`<br>`test_collected_test_without_req_fails_the_run`<br>`test_test_that_rtm_cannot_see_fails_the_run`<br>`test_this_repo_traceability_is_complete` |
 | ENV-05 | high | CI runs the full suite on Ubuntu and Windows with Python 3.12, installs the exact pins, has read-only permissions and never references a secret; repo text files are LF. | `test_ci_runs_on_ubuntu_and_windows_with_python_312`<br>`test_ci_installs_pins_and_runs_the_full_suite`<br>`test_ci_has_no_secrets_and_read_only_permissions`<br>`test_repo_text_files_are_lf` |
-| SRV-04 | high | Tool calls are checked strictly: an unknown tool is a -32602 protocol error; arguments that break the published inputSchema (wrong type, out of range, missing, unexpected) are a tool execution error naming the field and rule, never the value; an unexpected exception is -32603. | `test_f01_bare_sdk_answers_unknown_tool_with_is_error`<br>`test_f02_bare_sdk_coerces_and_drops_arguments` |
+| SRV-04 | high | Tool calls are checked strictly: an unknown tool is a -32602 protocol error; arguments that break the published inputSchema (wrong type, out of range, missing, unexpected) are a tool execution error naming the field and rule, never the value; an unexpected exception is -32603. | `test_schema_violations_are_tool_errors_naming_field_and_rule`<br>`test_argument_errors_never_echo_the_value`<br>`test_unknown_tool_is_invalid_params`<br>`test_non_object_arguments_are_invalid_params`<br>`test_failed_calls_leave_the_world_unchanged`<br>`test_f01_bare_sdk_answers_unknown_tool_with_is_error`<br>`test_f02_bare_sdk_coerces_and_drops_arguments` |
 | SRV-06 | medium | The investigate_alert(alert_id) prompt is listed and renders for a known alert; an unknown prompt, a missing or unexpected argument, or an unknown alert is -32602. | `test_f03_bare_sdk_missing_prompt_argument_is_not_32602` |
 | SRV-01 | high | The world is built only from a seed: the same seed gives the same world in any process; it has 20 meters at 6 sites, 168 hourly readings per meter from 2026-01-05T00:00:00Z, and 50 alerts; all names are synthetic. | `test_same_seed_same_world_and_different_seed_differs`<br>`test_world_is_identical_across_processes`<br>`test_world_shape`<br>`test_names_are_synthetic`<br>`test_acknowledge_is_idempotent_and_unknown_raises` |
 | SRV-02 | high | On the seeded world, every tool result has structuredContent valid against its outputSchema and a text copy equal to it, on both revisions; every inputSchema is an object that forbids unknown properties; annotations match behaviour. | `test_tools_listed_with_object_schemas_that_forbid_extras`<br>`test_every_tool_output_matches_its_output_schema`<br>`test_tool_annotations_match_behaviour` |
