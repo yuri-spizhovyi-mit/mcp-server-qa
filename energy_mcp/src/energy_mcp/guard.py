@@ -5,7 +5,7 @@ defaults (docs/findings.md):
 - F-01: an unknown tool is the protocol error -32602, not an `isError` result;
 - F-02: arguments are validated strictly against the published `inputSchema` (Draft 2020-12),
   so "2" is not an integer and an unknown argument is rejected (SRV-D2);
-- F-03: prompt arguments are checked, and a missing one is -32602 (see `_check_prompt`).
+- F-03: an unknown prompt, or a missing or unexpected prompt argument, is -32602.
 A schema violation is a tool execution error (`isError`) that names the field and the rule
 and never repeats the value (SRV-D1).
 """
@@ -54,6 +54,8 @@ class ArgumentGuard:
             rejected = self._check_tool(params["name"], params.get("arguments"))
             if rejected is not None:
                 return rejected
+        elif ctx.method == "prompts/get" and isinstance(params.get("name"), str):
+            self._check_prompt(params["name"], params.get("arguments"))
         return await call_next(ctx)
 
     def _check_tool(self, name: str, arguments: Any) -> CallToolResult | None:
@@ -68,3 +70,18 @@ class ArgumentGuard:
             return None
         text = f"Invalid arguments for tool {name}: " + "; ".join(parts)
         return CallToolResult(content=[TextContent(type="text", text=text)], is_error=True)
+
+    def _check_prompt(self, name: str, arguments: Any) -> None:
+        """F-03: every bad prompts/get is -32602 (the SDK answers code 0 or -32603)."""
+        if name not in self._prompt_args:
+            raise MCPError(code=INVALID_PARAMS, message=f"Unknown prompt: {name}")
+        arguments = {} if arguments is None else arguments
+        if not isinstance(arguments, Mapping):
+            raise MCPError(code=INVALID_PARAMS, message="Invalid params: arguments must be an object")
+        required, allowed = self._prompt_args[name]
+        if missing := sorted(required - set(arguments)):
+            raise MCPError(code=INVALID_PARAMS,
+                           message=f"Missing required argument for prompt {name}: {', '.join(missing)}")
+        if unexpected := sorted(set(arguments) - allowed):
+            raise MCPError(code=INVALID_PARAMS,
+                           message=f"Unexpected argument for prompt {name}: {', '.join(unexpected)}")

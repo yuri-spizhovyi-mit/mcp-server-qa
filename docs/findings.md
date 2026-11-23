@@ -38,7 +38,8 @@ Entry format:
 - Evidence: `prompts/get` without a required argument returns error code `0` on 2025-11-25
   and `-32603` "Internal server error" on 2026-07-28. The spec (server/prompts, "Error
   Handling"): "Missing required arguments: `-32602` (Invalid params)".
-- Status: open in the SDK; worked around in `energy_mcp` (M1, Task 5).
+- Status: open in the SDK (still pinned by `tests/test_sdk_findings.py`); worked around in
+  `energy_mcp/guard.py`, held by `tests/test_prompt.py` (6 of its 14 cases fail with the prompt check removed).
 
 ## F-04: Our plan stated two SDK facts that were wrong (a harness bug)
 - Found by: the M1 SDK spike, before any M1 code was written.

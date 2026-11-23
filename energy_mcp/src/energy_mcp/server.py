@@ -1,4 +1,4 @@
-"""The energy_mcp server: four tools over the seeded world (resource and prompt: Task 5).
+"""The energy_mcp server: four tools, the reports:// resource and one prompt over the seeded world.
 
 Tools are built as `Tool` objects rather than with `@server.tool()`, so each published
 `inputSchema` can say `additionalProperties: false` (SRV-D2) before the server sees it.
@@ -9,17 +9,20 @@ from __future__ import annotations
 import base64
 import binascii
 import functools
+import inspect
 import logging
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ResourceNotFoundError, ToolError
 from mcp.server.mcpserver.tools import Tool
 from mcp.shared.exceptions import MCPError
 from mcp_types import ToolAnnotations
-from mcp_types.jsonrpc import INTERNAL_ERROR
+from mcp_types.jsonrpc import INTERNAL_ERROR, INVALID_PARAMS
 
 from pydantic import Field
 
@@ -30,6 +33,11 @@ from energy_mcp.world import TIME_FORMAT, World, build_world
 
 logger = logging.getLogger("energy_mcp")
 
+REPORTS_DIR = Path(__file__).with_name("reports")
+REPORT_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+ALERT_ID = re.compile(r"^ALR-\d{4}$")
+# prompt name -> (required arguments, allowed arguments), enforced by the guard (F-03)
+PROMPT_ARGS = {"investigate_alert": (frozenset({"alert_id"}), frozenset({"alert_id"}))}
 TOOL_NAMES = ("list_meters", "get_readings", "list_alerts", "acknowledge_alert")
 SiteId = Annotated[str, Field(pattern=r"^SITE-\d{2}$")]
 MeterId = Annotated[str, Field(pattern=r"^MTR-\d{4}$")]
@@ -128,5 +136,42 @@ def build_server(world: World | None = None, *, clock: Callable[[], datetime] = 
     world = build_world() if world is None else world
     tools = _tools(world, clock, operator)
     assert tuple(t.name for t in tools) == TOOL_NAMES
-    guard = ArgumentGuard({t.name: t.parameters for t in tools})
-    return MCPServer("energy-mcp", version=__version__, tools=tools, middleware=[guard])
+    guard = ArgumentGuard({t.name: t.parameters for t in tools}, PROMPT_ARGS)
+    server = MCPServer("energy-mcp", version=__version__, tools=tools, middleware=[guard])
+    _add_reports(server)
+    _add_prompt(server, world)
+    return server
+
+
+def read_report(name: str) -> str:
+    """A report's text. Only a plain lowercase name of a file inside REPORTS_DIR is served."""
+    path = REPORTS_DIR / f"{name}.md"
+    if not REPORT_NAME.fullmatch(name) or not path.is_file() or path.resolve().parent != REPORTS_DIR.resolve():
+        raise ResourceNotFoundError(f"Unknown report: {name}")  # -32602
+    return path.read_text(encoding="utf-8")
+
+
+def _add_reports(server: MCPServer) -> None:
+    server.resource("reports://{name}", name="report", mime_type="text/markdown",
+                    description="A synthetic report by name, e.g. reports://weekly-summary.")(read_report)
+    for path in sorted(REPORTS_DIR.glob("*.md")):
+        def read(stem: str = path.stem) -> str:
+            return read_report(stem)
+        read.__signature__ = inspect.Signature()  # a static resource takes no parameters
+        server.resource(f"reports://{path.stem}", name=path.stem, mime_type="text/markdown")(read)
+
+
+def _add_prompt(server: MCPServer, world: World) -> None:
+    @server.prompt(name="investigate_alert", description="Investigate one meter alert before deciding to acknowledge it.")
+    def investigate_alert(alert_id: str) -> str:
+        if not ALERT_ID.fullmatch(alert_id):
+            raise MCPError(code=INVALID_PARAMS, message="alert_id must look like ALR-0001")
+        alert = world.alert(alert_id)
+        if alert is None:
+            raise MCPError(code=INVALID_PARAMS, message=f"Unknown alert: {alert_id}")
+        return (
+            f"Investigate alert {alert.alert_id} ({alert.severity} severity, {alert.status}) on meter "
+            f"{alert.meter_id}, raised at {alert.raised_at}. Use get_readings for {alert.meter_id} around that "
+            f"time and list_alerts for other alerts on the same meter. Then say whether the readings explain "
+            f"the alert, and call acknowledge_alert only if no further action is needed."
+        )
