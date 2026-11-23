@@ -5,12 +5,12 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**7 requirements, 7 traced: 23 requirement-test links.**
+**8 requirements, 8 traced: 28 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
-| Server | 2 | 3 | 1 |
+| Server | 3 | 8 | 2 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -21,3 +21,4 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | ENV-05 | high | CI runs the full suite on Ubuntu and Windows with Python 3.12, installs the exact pins, has read-only permissions and never references a secret; repo text files are LF. | `test_ci_runs_on_ubuntu_and_windows_with_python_312`<br>`test_ci_installs_pins_and_runs_the_full_suite`<br>`test_ci_has_no_secrets_and_read_only_permissions`<br>`test_repo_text_files_are_lf` |
 | SRV-04 | high | Tool calls are checked strictly: an unknown tool is a -32602 protocol error; arguments that break the published inputSchema (wrong type, out of range, missing, unexpected) are a tool execution error naming the field and rule, never the value; an unexpected exception is -32603. | `test_f01_bare_sdk_answers_unknown_tool_with_is_error`<br>`test_f02_bare_sdk_coerces_and_drops_arguments` |
 | SRV-06 | medium | The investigate_alert(alert_id) prompt is listed and renders for a known alert; an unknown prompt, a missing or unexpected argument, or an unknown alert is -32602. | `test_f03_bare_sdk_missing_prompt_argument_is_not_32602` |
+| SRV-01 | high | The world is built only from a seed: the same seed gives the same world in any process; it has 20 meters at 6 sites, 168 hourly readings per meter from 2026-01-05T00:00:00Z, and 50 alerts; all names are synthetic. | `test_same_seed_same_world_and_different_seed_differs`<br>`test_world_is_identical_across_processes`<br>`test_world_shape`<br>`test_names_are_synthetic`<br>`test_acknowledge_is_idempotent_and_unknown_raises` |
