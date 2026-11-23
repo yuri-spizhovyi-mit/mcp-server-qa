@@ -160,3 +160,13 @@ def modern_headers(method: str, name: str | None = None) -> dict[str, str]:
     """The headers a raw 2026-07-28 request needs; the SDK checks they mirror the body (-32020)."""
     headers = {"mcp-protocol-version": "2026-07-28", "mcp-method": method}
     return headers | ({"mcp-name": name} if name else {})
+
+
+async def post_call(client: httpx2.AsyncClient, name: str, arguments: Any = None) -> httpx2.Response:
+    """A complete raw 2026-07-28 tools/call that the SDK would run.
+
+    A refusal is only proof that the edge refused if the request would have worked without
+    it; an incomplete request is refused by the SDK anyway, and the test could not fail.
+    """
+    body = rpc("tools/call", {"name": name, "arguments": {} if arguments is None else arguments, "_meta": ENVELOPE})
+    return await post(client, body, **modern_headers("tools/call", name))

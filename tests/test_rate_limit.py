@@ -8,7 +8,7 @@ from energy_mcp.edge import build_http_app
 from energy_mcp.ratelimit import RateLimiter
 from energy_mcp.world import build_world
 from issuer import JANUARY, Issuer
-from servers import ManualClock, http, post, running, tool_call
+from servers import FakeClock, ManualClock, http, post, post_call, running, tool_call
 
 pytestmark = pytest.mark.req("AUTH-06")
 
@@ -18,7 +18,8 @@ LIST = tool_call("list_meters")
 
 def limited_app(issuer: Issuer, clock: ManualClock):
     world = build_world()
-    app, server = build_http_app(world, settings=issuer.settings, clock=clock, rate_limit=3, rate_window=60)
+    app, server = build_http_app(world, settings=issuer.settings, clock=clock, wall_clock=FakeClock(), rate_limit=3,
+                                 rate_window=60)
     return world, app, server
 
 
@@ -86,14 +87,19 @@ async def test_refused_scope_calls_count(issuer: Issuer) -> None:
 
 @pytest.mark.anyio
 async def test_limited_call_never_reaches_the_server(issuer: Issuer) -> None:
-    world, app, server = limited_app(issuer, ManualClock(JANUARY))
+    """ScopeGuard allows this call, so only the edge's order (429 before the SDK) protects the world."""
+    clock = ManualClock(JANUARY)
+    world, app, server = limited_app(issuer, clock)
     before = world.digest()
     async with running(server), http(app, issuer.mint(scope=f"{READ} alerts:write")) as client:
         for _ in range(3):
             await post(client, LIST)
-        limited = await post(client, tool_call("acknowledge_alert", {"alert_id": "ALR-0001"}))
-    assert limited.status_code == 429
-    assert world.digest() == before
+        limited = await post_call(client, "acknowledge_alert", {"alert_id": "ALR-0001"})
+        assert limited.status_code == 429
+        assert world.digest() == before
+        clock.advance(60)  # control: the same request, once the window resets, does change the world
+        assert (await post_call(client, "acknowledge_alert", {"alert_id": "ALR-0001"})).status_code == 200
+    assert world.alert("ALR-0001").status == "acknowledged"
 
 
 @pytest.mark.anyio

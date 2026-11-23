@@ -18,8 +18,8 @@ from mcp import Client
 from energy_mcp.edge import build_http_app
 from energy_mcp.world import World, build_world
 from issuer import JANUARY, Issuer, new_key
-from servers import (ENVELOPE, METADATA_URL, MODES, ManualClock, http, mcp_over, modern_headers, post, rpc,
-                     running, tool_call)
+from servers import (ENVELOPE, METADATA_URL, MODES, FakeClock, ManualClock, http, mcp_over, modern_headers, post,
+                     post_call, rpc, running, tool_call)
 
 pytestmark = pytest.mark.anyio
 
@@ -41,7 +41,7 @@ class Edge:
 @pytest.fixture
 def edge(issuer: Issuer) -> Edge:
     world, clock = build_world(), ManualClock(JANUARY)
-    app, server = build_http_app(world, settings=issuer.settings, clock=clock)
+    app, server = build_http_app(world, settings=issuer.settings, clock=clock, wall_clock=FakeClock())
     return Edge(world, clock, app, server)
 
 
@@ -171,7 +171,7 @@ async def test_per_alert_token_over_http(edge: Edge, issuer: Issuer) -> None:
     async with running(edge.server), http(edge.app, token) as client:
         async with mcp_over(client, "2026-07-28") as mcp:
             ok = await mcp.call_tool("acknowledge_alert", {"alert_id": "ALR-0001"})
-        refused = await post(client, tool_call("acknowledge_alert", {"alert_id": "ALR-0004"}))
+        refused = await post_call(client, "acknowledge_alert", {"alert_id": "ALR-0004"})
     assert ok.is_error is False and ok.structured_content["acknowledged_by"] == "op-9"
     assert refused.status_code == 403
     assert refused.headers["www-authenticate"] == forbidden("alerts:write:ALR-0004")
@@ -188,16 +188,20 @@ async def test_acknowledged_by_is_the_token_subject(edge: Edge, issuer: Issuer) 
 
 @pytest.mark.req("AUTH-04")
 async def test_refused_calls_leave_the_world_unchanged(edge: Edge, issuer: Issuer) -> None:
+    """Each refused request is one the SDK would run (the control at the end runs it), so only the edge stops it."""
     before = edge.world.digest()
-    ack = tool_call("acknowledge_alert", {"alert_id": "ALR-0001"})
+    ack = {"alert_id": "ALR-0001"}
     cases = [(None, 401), (issuer.mint(scope="alerts:write", now=JANUARY - 7200), 401),
              (issuer.mint(scope="alerts:write", aud="http://127.0.0.1:9000/mcp"), 401),
              (issuer.mint(scope=READ), 403), (issuer.mint(scope="alerts:write:ALR-0004"), 403)]
     async with running(edge.server):
         for token, status in cases:
             async with http(edge.app, token) as client:
-                assert (await post(client, ack)).status_code == status
-    assert edge.world.digest() == before
+                assert (await post_call(client, "acknowledge_alert", ack)).status_code == status
+        assert edge.world.digest() == before
+        async with http(edge.app, issuer.mint(scope="alerts:write")) as client:  # control
+            assert (await post_call(client, "acknowledge_alert", ack)).status_code == 200
+    assert edge.world.alert("ALR-0001").status == "acknowledged"
 
 
 @pytest.mark.req("AUTH-02")
@@ -245,6 +249,17 @@ async def test_unreadable_bodies_cannot_write(edge: Edge, issuer: Issuer, case: 
         response = await post(client, None, raw=raw, **modern_headers(method, name))
     assert response.status_code == 400, response.text
     assert response.json()["error"]["code"] == -32700
+    assert edge.world.digest() == before
+
+
+@pytest.mark.req("AUTH-04")
+async def test_content_type_does_not_hide_a_call(edge: Edge, issuer: Issuer) -> None:
+    """The edge reads the body whatever the content type claims, so text/plain can't skip the scope check."""
+    before = edge.world.digest()
+    async with running(edge.server), http(edge.app, issuer.mint(scope=READ)) as client:
+        response = await post(client, None, raw=raw_call(ACK_PARAMS), content_type="text/plain",
+                              **modern_headers("tools/call", "acknowledge_alert"))
+    assert response.status_code == 403
     assert edge.world.digest() == before
 
 
