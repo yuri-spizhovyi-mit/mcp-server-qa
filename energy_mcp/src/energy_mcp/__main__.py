@@ -21,6 +21,7 @@ import uvicorn
 from energy_mcp.access import identity_from_env
 from energy_mcp.edge import build_http_app
 from energy_mcp.server import build_server
+from energy_mcp.stdio import run_stdio
 from energy_mcp.tokens import TokenSettings
 from energy_mcp.world import build_world
 
@@ -58,7 +59,7 @@ def main(argv: list[str] | None = None) -> None:
             identity = identity_from_env(os.environ)
         except ValueError as error:
             _parser().error(str(error))
-        build_server(world, identity=identity).run("stdio")
+        run_stdio(build_server(world, identity=identity))
         return
     with open(args.public_key, "rb") as key:
         settings = TokenSettings(issuer=args.issuer, audience=args.resource or f"http://{args.host}:{args.port}/mcp",

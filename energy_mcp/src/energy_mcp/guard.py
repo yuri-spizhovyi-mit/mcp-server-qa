@@ -64,15 +64,23 @@ def _parts(error: ValidationError) -> list[str]:
     return [f"{path}: must satisfy {error.validator} {json.dumps(error.validator_value)}"]
 
 
+# The server never issues a cursor for these, so any cursor sent is invalid (F-14).
+LIST_METHODS = frozenset({"tools/list", "resources/list", "resources/templates/list", "prompts/list"})
+
+
 class ArgumentGuard:
     def __init__(self, tool_schemas: Mapping[str, Mapping[str, Any]],
-                 prompt_args: Mapping[str, tuple[frozenset[str], frozenset[str]]] | None = None) -> None:
+                 prompt_args: Mapping[str, tuple[frozenset[str], frozenset[str]]] | None = None,
+                 *, reject_list_cursors: bool = True) -> None:
         self._validators = {name: StrictValidator(dict(schema)) for name, schema in tool_schemas.items()}
         # prompt name -> (required argument names, allowed argument names)
         self._prompt_args = dict(prompt_args or {})
+        self._reject_list_cursors = reject_list_cursors
 
     async def __call__(self, ctx: Any, call_next: Callable[[Any], Awaitable[Any]]) -> Any:
         params = ctx.params if isinstance(ctx.params, Mapping) else {}
+        if self._reject_list_cursors and ctx.method in LIST_METHODS and params.get("cursor") is not None:
+            raise MCPError(code=INVALID_PARAMS, message="Invalid cursor")  # the caller's cursor is not echoed
         if ctx.method == "tools/call" and isinstance(params.get("name"), str):
             rejected = self._check_tool(params["name"], params.get("arguments"))
             if rejected is not None:

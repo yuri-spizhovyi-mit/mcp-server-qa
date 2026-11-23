@@ -14,7 +14,6 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
 from mcp_types.jsonrpc import INVALID_PARAMS
 
-from mcp.server import MCPServer
 
 from energy_mcp.__main__ import main, parse_args
 from energy_mcp.server import TOOL_NAMES
@@ -37,7 +36,7 @@ def test_cli_serves_http_on_localhost_unless_told(monkeypatch: pytest.MonkeyPatc
     auth = ["--public-key", str(key), "--issuer", "https://issuer.test"]
     calls = []
     monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append(("http", kw["host"], kw["port"])))
-    monkeypatch.setattr(MCPServer, "run", lambda self, transport="stdio", **kw: calls.append((transport, kw)))
+    monkeypatch.setattr("energy_mcp.__main__.run_stdio", lambda server, **kw: calls.append(("stdio", kw)))
     main(["--transport", "http", *auth])
     main(["--transport", "http", "--host", "0.0.0.0", "--port", "9001", *auth])
     main([])
