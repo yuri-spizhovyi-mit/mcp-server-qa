@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types.jsonrpc import INTERNAL_ERROR
@@ -13,6 +15,11 @@ from servers import FakeClock, connect
 pytestmark = [pytest.mark.req("SRV-03"), pytest.mark.anyio]
 
 MODE = "2026-07-28"  # protocol-revision coverage is SRV-02's and SRV-07's job
+
+
+def _cursor_for(meter_id: str, offset: int) -> str:
+    """A cursor in the server's format (urlsafe base64 of "<meter>:<offset>"), forged by the test."""
+    return base64.urlsafe_b64encode(f"{meter_id}:{offset}".encode()).rstrip(b"=").decode()
 
 
 async def call(world: World, name: str, arguments: dict, **server_kwargs):
@@ -50,7 +57,9 @@ async def test_bad_cursor_is_a_tool_error() -> None:
     async with connect(build_server(world), MODE) as client:
         first = await client.call_tool("get_readings", {"meter_id": "MTR-0001", "limit": 10})
         minted = first.structured_content["next_cursor"]
-        for meter_id, cursor in (("MTR-0001", "garbage!!"), ("MTR-0002", minted), ("MTR-0001", "TVRSLTAwMDE6eA")):
+        forged = [_cursor_for("MTR-0001", offset) for offset in (0, -5, 168, 999)]  # in-format, out of range
+        cases = [("MTR-0001", "garbage!!"), ("MTR-0002", minted), ("MTR-0001", "TVRSLTAwMDE6eA")]
+        for meter_id, cursor in cases + [("MTR-0001", c) for c in forged]:
             result = await client.call_tool("get_readings", {"meter_id": meter_id, "cursor": cursor})
             assert result.is_error is True, cursor
             assert "Invalid cursor" in result.content[0].text, cursor

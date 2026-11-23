@@ -9,7 +9,9 @@ from mcp import Client
 from mcp.shared.exceptions import MCPError
 from mcp_types.jsonrpc import INVALID_PARAMS
 
-from energy_mcp.__main__ import parse_args
+from mcp.server import MCPServer
+
+from energy_mcp.__main__ import main, parse_args
 from energy_mcp.server import TOOL_NAMES
 from servers import MODES, free_port, http_server, stdio_params, validate
 
@@ -20,6 +22,17 @@ def test_cli_defaults_to_stdio_and_localhost() -> None:
     """Started with no flags, the server must not listen on every interface."""
     args = parse_args([])
     assert (args.transport, args.host, args.port, args.seed) == ("stdio", "127.0.0.1", 8000, 42)
+
+
+def test_cli_serves_http_on_localhost_unless_told(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What main() hands the SDK, not just what argparse parsed."""
+    calls = []
+    monkeypatch.setattr(MCPServer, "run", lambda self, transport="stdio", **kw: calls.append((transport, kw)))
+    main(["--transport", "http"])
+    main(["--transport", "http", "--host", "0.0.0.0", "--port", "9001"])
+    main([])
+    assert calls == [("streamable-http", {"host": "127.0.0.1", "port": 8000}),
+                     ("streamable-http", {"host": "0.0.0.0", "port": 9001}), ("stdio", {})]
 
 
 @pytest.mark.anyio

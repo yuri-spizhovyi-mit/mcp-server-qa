@@ -32,12 +32,18 @@ async def test_prompt_renders_the_alert(mode: str) -> None:
 
 
 @pytest.mark.parametrize(("name", "args", "message"), [
-    ("nosuch", {"alert_id": "ALR-0001"}, "Unknown prompt: nosuch"),
+    ("nosuch", {"alert_id": "ALR-0001"}, "Unknown prompt; available: investigate_alert"),
     ("investigate_alert", {}, "Missing required argument for prompt investigate_alert: alert_id"),
-    ("investigate_alert", {"alert_id": "ALR-0001", "x": "1"}, "Unexpected argument for prompt investigate_alert: x"),
+    ("investigate_alert", {"alert_id": "ALR-0001", "x": "1"},
+     "Unexpected argument for prompt investigate_alert; allowed: alert_id"),
     ("investigate_alert", {"alert_id": "ALR-0999"}, "Unknown alert: ALR-0999"),
     ("investigate_alert", {"alert_id": "nope"}, "alert_id must look like ALR-0001"),
-], ids=["unknown-prompt", "missing", "unexpected", "unknown-alert", "malformed-id"])
+    ("investigate_alert", {"alert_id": "ALR-0001\n"}, "alert_id must look like ALR-0001"),
+    ("SENTINEL-7Q", {}, "Unknown prompt; available: investigate_alert"),
+    ("investigate_alert", {"alert_id": "ALR-0001", "SENTINEL-7Q": "1"},
+     "Unexpected argument for prompt investigate_alert; allowed: alert_id"),
+], ids=["unknown-prompt", "missing", "unexpected", "unknown-alert", "malformed-id", "trailing-newline",
+        "sentinel-name", "sentinel-argument"])
 async def test_prompt_errors_are_invalid_params(mode: str, name: str, args: dict, message: str) -> None:
     async with connect(build_server(), mode) as client:
         with pytest.raises(MCPError) as caught:

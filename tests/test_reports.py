@@ -49,6 +49,15 @@ async def test_unknown_or_malformed_report_is_invalid_params(mode: str, uri: str
     assert caught.value.error.code == INVALID_PARAMS, caught.value.error
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("mode", MODES)
+async def test_report_errors_never_echo_the_name(mode: str) -> None:
+    async with connect(build_server(), mode) as client:
+        with pytest.raises(MCPError) as caught:
+            await client.read_resource("reports://SENTINEL-7Q")
+    assert caught.value.error.message == "Unknown report; available: maintenance-log, tariff-notes, weekly-summary"
+
+
 def test_reports_ship_inside_the_package() -> None:
     """The files sit next to the code, so an installed wheel carries them (hatchling includes them)."""
     assert REPORTS_DIR == Path(__import__("energy_mcp").__file__).with_name("reports")

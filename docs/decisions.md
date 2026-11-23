@@ -34,10 +34,16 @@ Entry format:
 ## SRV-D1: What does a call with arguments that break the tool's schema return?
 - Decision: a tool execution error (`isError: true`), as the spec lists input validation
   errors. The text is `Invalid arguments for tool <name>: <path>: <rule>; ...`. It names the
-  field and the broken rule and never repeats the value the caller sent. An unknown tool is a
-  protocol error, `-32602`.
+  field and the broken rule and never repeats anything the caller chose: no values, no
+  unknown keys, no unknown tool, prompt, argument or report names. Where a name is wrong,
+  the error lists the server's own allowed names instead (`unexpected property; allowed:
+  cursor, limit, meter_id`). An unknown tool is a protocol error, `-32602`, with the list of
+  available tools. IDs are echoed only after they match their ASCII pattern
+  (`Unknown alert ALR-0999`).
 - Why: the model can read and correct a tool error (the spec says clients SHOULD pass them
-  on), while echoing a value back would hand injected text straight to the next model turn.
+  on), while echoing caller text back, a value or a key, would hand injected text straight to
+  the next model turn (F-05). The spec's own example echoes the unknown tool name; we list the
+  available tools instead, which helps the model at least as much.
 - Held by: `tests/test_arguments.py::test_schema_violations_are_tool_errors_naming_field_and_rule`,
   `tests/test_arguments.py::test_argument_errors_never_echo_the_value`,
   `tests/test_arguments.py::test_unknown_tool_is_invalid_params`

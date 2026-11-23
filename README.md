@@ -36,7 +36,7 @@ add the server and restart the app:
 {
   "mcpServers": {
     "energy-mcp": {
-      "command": "C:\path\to\mcp-server-qa\.venv\Scripts\python.exe",
+      "command": "C:\\path\\to\\mcp-server-qa\\.venv\\Scripts\\python.exe",
       "args": ["-m", "energy_mcp"]
     }
   }

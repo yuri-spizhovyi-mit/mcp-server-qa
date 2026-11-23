@@ -34,14 +34,15 @@ from energy_mcp.world import TIME_FORMAT, World, build_world
 logger = logging.getLogger("energy_mcp")
 
 REPORTS_DIR = Path(__file__).with_name("reports")
-REPORT_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-ALERT_ID = re.compile(r"^ALR-\d{4}$")
+REPORT_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")  # used with fullmatch
+ALERT_ID = re.compile(r"ALR-[0-9]{4}")  # used with fullmatch
 # prompt name -> (required arguments, allowed arguments), enforced by the guard (F-03)
 PROMPT_ARGS = {"investigate_alert": (frozenset({"alert_id"}), frozenset({"alert_id"}))}
 TOOL_NAMES = ("list_meters", "get_readings", "list_alerts", "acknowledge_alert")
-SiteId = Annotated[str, Field(pattern=r"^SITE-\d{2}$")]
-MeterId = Annotated[str, Field(pattern=r"^MTR-\d{4}$")]
-AlertId = Annotated[str, Field(pattern=r"^ALR-\d{4}$")]
+# [0-9], not \d: in Python \d also matches non-ASCII digits, which JSON Schema (ECMA-262) patterns do not.
+SiteId = Annotated[str, Field(pattern=r"^SITE-[0-9]{2}$")]
+MeterId = Annotated[str, Field(pattern=r"^MTR-[0-9]{4}$")]
+AlertId = Annotated[str, Field(pattern=r"^ALR-[0-9]{4}$")]
 READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 ACKNOWLEDGE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 
@@ -147,7 +148,9 @@ def read_report(name: str) -> str:
     """A report's text. Only a plain lowercase name of a file inside REPORTS_DIR is served."""
     path = REPORTS_DIR / f"{name}.md"
     if not REPORT_NAME.fullmatch(name) or not path.is_file() or path.resolve().parent != REPORTS_DIR.resolve():
-        raise ResourceNotFoundError(f"Unknown report: {name}")  # -32602
+        # -32602; the caller's name is not echoed (SRV-D1), the available ones are listed
+        available = ", ".join(sorted(p.stem for p in REPORTS_DIR.glob("*.md")))
+        raise ResourceNotFoundError(f"Unknown report; available: {available}")
     return path.read_text(encoding="utf-8")
 
 
