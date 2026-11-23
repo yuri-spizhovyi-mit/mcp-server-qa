@@ -27,3 +27,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             problems.add(f"{test_id} is collected by pytest but invisible to scripts/rtm.py")
     if problems:
         raise pytest.UsageError("traceability gate (ENV-04):\n" + "\n".join(sorted(problems)))
+
+
+@pytest.fixture(scope="session")
+def issuer():
+    """One test issuer (and RSA key pair) per test session; see tests/issuer.py."""
+    from issuer import Issuer
+
+    return Issuer()

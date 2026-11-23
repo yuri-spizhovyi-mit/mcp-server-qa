@@ -2,7 +2,7 @@
 
 QA for the tool layer of AI agents: a small MCP server and the test suite that proves it follows the protocol, keeps its tool contracts, resists attacks, and works for an agent that uses it.
 
-Status: M1 server (in progress). Plan: [docs/plan.md](docs/plan.md).
+Status: M1 server done; M2 auth in progress. Plan: [docs/plan.md](docs/plan.md).
 
 ## Run the server
 
@@ -10,11 +10,30 @@ Windows PowerShell, in the repo folder, after `python -m venv .venv` and
 `.\.venv\Scripts\python -m pip install -r requirements.txt`:
 
 ```powershell
-.\.venv\Scripts\python -m energy_mcp                               # stdio (what Claude launches)
-.\.venv\Scripts\python -m energy_mcp --transport http --port 8000  # Streamable HTTP at http://127.0.0.1:8000/mcp
+.\.venv\Scripts\python -m energy_mcp                               # stdio (what Claude launches), read-only
 ```
 
 All data is synthetic (seed 42): 20 meters at 6 sites, a week of hourly readings, 50 alerts.
+
+**Who the caller is on stdio.** The server reads two environment variables:
+
+- `ENERGY_MCP_SCOPES`: space-separated. The default is `meters:read alerts:read reports:read`, which is read-only.
+- `ENERGY_MCP_OPERATOR`: default `local-operator`. It is recorded as `acknowledged_by`.
+
+Set `ENERGY_MCP_SCOPES` to `meters:read alerts:read reports:read alerts:write` to let `acknowledge_alert` write. An unknown scope stops the server at startup.
+
+**HTTP** is an OAuth 2.1 resource server, and there is no unauthenticated mode. It needs your token issuer's public key (a PEM file) and its name:
+
+```powershell
+.\.venv\Scripts\python -m energy_mcp --transport http --port 8000 --public-key issuer.pem --issuer https://issuer.example
+```
+
+- It serves Streamable HTTP at `http://127.0.0.1:8000/mcp`. That URL is also the audience its tokens must carry; change it with `--resource`.
+- It publishes RFC 9728 metadata at `/.well-known/oauth-protected-resource/mcp`.
+- It accepts RS256 `at+jwt` access tokens. Each tool, resource and prompt needs its own scope, and `alerts:write:ALR-0042` acknowledges only that one alert.
+- The rate limit is 60 requests per minute per caller (`--rate-limit`, `--rate-window`).
+
+The tests mint their own tokens; see `tests/issuer.py`.
 
 ## Try it with Claude (no API key)
 

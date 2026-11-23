@@ -10,7 +10,7 @@ from mcp_types.jsonrpc import INTERNAL_ERROR
 
 from energy_mcp.server import build_server
 from energy_mcp.world import World, build_world
-from servers import FakeClock, connect
+from servers import FakeClock, connect, writer
 
 pytestmark = [pytest.mark.req("SRV-03"), pytest.mark.anyio]
 
@@ -23,7 +23,7 @@ def _cursor_for(meter_id: str, offset: int) -> str:
 
 
 async def call(world: World, name: str, arguments: dict, **server_kwargs):
-    async with connect(build_server(world, **server_kwargs), MODE) as client:
+    async with connect(build_server(world, **({"identity": writer()} | server_kwargs)), MODE) as client:
         return await client.call_tool(name, arguments)
 
 
@@ -77,10 +77,10 @@ async def test_list_alerts_filters() -> None:
 async def test_acknowledge_changes_the_world_and_is_idempotent() -> None:
     world = build_world()
     alert_id = next(a.alert_id for a in world.alerts if a.status == "open")
-    async with connect(build_server(world, clock=FakeClock()), MODE) as client:
+    async with connect(build_server(world, clock=FakeClock(), identity=writer()), MODE) as client:
         first = (await client.call_tool("acknowledge_alert", {"alert_id": alert_id})).structured_content
         assert (first["status"], first["acknowledged_by"], first["acknowledged_at"]) == (
-            "acknowledged", "local-operator", "2026-01-12T09:00:00Z")
+            "acknowledged", "op-1", "2026-01-12T09:00:00Z")
         stored = world.alert(alert_id)  # score the world, not the words
         assert (stored.status, stored.acknowledged_at) == ("acknowledged", "2026-01-12T09:00:00Z")
         again = (await client.call_tool("acknowledge_alert", {"alert_id": alert_id})).structured_content
@@ -103,7 +103,7 @@ async def test_tool_crash_is_internal_error(monkeypatch: pytest.MonkeyPatch) -> 
         raise RuntimeError("secret-detail-41")
     monkeypatch.setattr(World, "acknowledge", explode)
     # Catch inside `async with`: an error that escapes the Client's task group arrives as an ExceptionGroup.
-    async with connect(build_server(build_world()), MODE) as client:
+    async with connect(build_server(build_world(), identity=writer()), MODE) as client:
         with pytest.raises(MCPError) as caught:
             await client.call_tool("acknowledge_alert", {"alert_id": "ALR-0001"})
     assert caught.value.error.code == INTERNAL_ERROR

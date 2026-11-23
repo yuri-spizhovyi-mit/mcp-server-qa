@@ -15,7 +15,7 @@ from mcp_types.jsonrpc import INVALID_PARAMS
 from energy_mcp.guard import ArgumentGuard
 from energy_mcp.server import build_server
 from energy_mcp.world import build_world
-from servers import MODES, connect
+from servers import MODES, connect, writer
 
 pytestmark = [pytest.mark.req("SRV-04"), pytest.mark.anyio]
 
@@ -37,7 +37,7 @@ pytestmark = [pytest.mark.req("SRV-04"), pytest.mark.anyio]
         "trailing-newline", "unicode-digits", "enum-in-optional", "pattern-in-optional"])
 async def test_schema_violations_are_tool_errors_naming_field_and_rule(mode: str, tool: str, args: dict,
                                                                        part: str) -> None:
-    async with connect(build_server(), mode) as client:
+    async with connect(build_server(identity=writer()), mode) as client:
         result = await client.call_tool(tool, args)
     assert result.is_error is True
     text = result.content[0].text
@@ -51,7 +51,7 @@ async def test_argument_errors_never_echo_the_value(mode: str) -> None:
     cases = ({"meter_id": "SENTINEL-7Q"}, {"meter_id": "MTR-0001", "limit": "SENTINEL-7Q"},
              {"meter_id": "MTR-0001", "SENTINEL-7Q": 1}, {"meter_id": "MTR-0001\nSENTINEL-7Q"},
              {"meter_id": "MTR-0001\n"})
-    async with connect(build_server(), mode) as client:
+    async with connect(build_server(identity=writer()), mode) as client:
         for args in cases:
             result = await client.call_tool("get_readings", args)
             text = result.content[0].text
@@ -65,7 +65,7 @@ async def test_argument_errors_never_echo_the_value(mode: str) -> None:
 
 @pytest.mark.parametrize("mode", MODES)
 async def test_unknown_tool_is_invalid_params(mode: str) -> None:
-    async with connect(build_server(), mode) as client:
+    async with connect(build_server(identity=writer()), mode) as client:
         with pytest.raises(MCPError) as caught:
             await client.call_tool("nosuch", {})
     assert (caught.value.error.code, caught.value.error.message) == (
@@ -90,7 +90,7 @@ async def test_failed_calls_leave_the_world_unchanged(mode: str) -> None:
     world = build_world()
     open_id = next(a.alert_id for a in world.alerts if a.status == "open")  # so a slipped-through call would show
     before = world.digest()
-    async with connect(build_server(world), mode) as client:
+    async with connect(build_server(world, identity=writer()), mode) as client:
         assert (await client.call_tool("acknowledge_alert", {"alert_id": "ALR-1"})).is_error
         assert (await client.call_tool("acknowledge_alert", {"alert_id": "ALR-0999"})).is_error
         assert (await client.call_tool("acknowledge_alert", {"alert_id": open_id, "by": "x"})).is_error

@@ -2,6 +2,8 @@
 mcp==2.3.0
 jsonschema==4.26.0
 pydantic==2.14.4
+PyJWT==2.15.1
+cryptography==50.0.2
 pytest==9.2.0
 pytest-timeout==2.4.0
 pyyaml==6.0.4
