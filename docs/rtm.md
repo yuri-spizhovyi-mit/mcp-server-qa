@@ -5,12 +5,12 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**8 requirements, 8 traced: 28 requirement-test links.**
+**10 requirements, 10 traced: 38 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
-| Server | 3 | 8 | 2 |
+| Server | 5 | 18 | 4 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -22,3 +22,5 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | SRV-04 | high | Tool calls are checked strictly: an unknown tool is a -32602 protocol error; arguments that break the published inputSchema (wrong type, out of range, missing, unexpected) are a tool execution error naming the field and rule, never the value; an unexpected exception is -32603. | `test_f01_bare_sdk_answers_unknown_tool_with_is_error`<br>`test_f02_bare_sdk_coerces_and_drops_arguments` |
 | SRV-06 | medium | The investigate_alert(alert_id) prompt is listed and renders for a known alert; an unknown prompt, a missing or unexpected argument, or an unknown alert is -32602. | `test_f03_bare_sdk_missing_prompt_argument_is_not_32602` |
 | SRV-01 | high | The world is built only from a seed: the same seed gives the same world in any process; it has 20 meters at 6 sites, 168 hourly readings per meter from 2026-01-05T00:00:00Z, and 50 alerts; all names are synthetic. | `test_same_seed_same_world_and_different_seed_differs`<br>`test_world_is_identical_across_processes`<br>`test_world_shape`<br>`test_names_are_synthetic`<br>`test_acknowledge_is_idempotent_and_unknown_raises` |
+| SRV-02 | high | On the seeded world, every tool result has structuredContent valid against its outputSchema and a text copy equal to it, on both revisions; every inputSchema is an object that forbids unknown properties; annotations match behaviour. | `test_tools_listed_with_object_schemas_that_forbid_extras`<br>`test_every_tool_output_matches_its_output_schema`<br>`test_tool_annotations_match_behaviour` |
+| SRV-03 | high | Tool results are right against the world: filters, complete and ordered pagination, tampered cursors rejected, unknown IDs are tool errors, acknowledgement changes the world and is idempotent, a crash is -32603 without detail. | `test_list_meters_filters_by_site`<br>`test_readings_paginate_completely_in_order`<br>`test_bad_cursor_is_a_tool_error`<br>`test_list_alerts_filters`<br>`test_acknowledge_changes_the_world_and_is_idempotent`<br>`test_unknown_ids_are_tool_errors`<br>`test_tool_crash_is_internal_error` |
