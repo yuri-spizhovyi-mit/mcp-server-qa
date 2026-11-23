@@ -7,7 +7,10 @@ name = "energy-mcp"
 version = "0.0.0"
 description = "The MCP server under test: synthetic energy data (meters, readings, alerts)."
 requires-python = ">=3.12"
-dependencies = ["mcp>=2.3,<3"]
+dependencies = ["mcp>=2.3,<3", "jsonschema>=4.23,<5", "pydantic>=2.11,<3"]
+
+[project.scripts]
+energy-mcp = "energy_mcp.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/energy_mcp"]
