@@ -104,6 +104,9 @@ Entry format:
   - A POST body that is not one UTF-8 JSON object without duplicate keys gets 400 with a
     JSON-RPC `-32700` body. Arrays, invalid JSON, non-UTF-8 and duplicate keys at any depth
     are all refused. The content type is ignored: the body is read whatever it claims.
+  - A JSON object that isn't a JSON-RPC 2.0 request, notification or response gets 400
+    `-32600` "Invalid Request", with its `id` when that is an integer or string, else `null`
+    (F-17, added in M3a).
   - A body over `max_body` (default 4 MiB) gets 413.
   - A client that hangs up before the body is complete gets nothing, and nothing is handed
     on.
@@ -124,7 +127,8 @@ Entry format:
   `tests/test_http_auth.py::test_body_over_the_limit_is_refused`,
   `tests/test_http_auth.py::test_aborted_request_is_not_executed`,
   `tests/test_http_auth.py::test_every_path_but_metadata_needs_a_token`,
-  `tests/test_rate_limit.py::test_call_n_plus_one_is_429_and_resets_on_the_clock`
+  `tests/test_rate_limit.py::test_call_n_plus_one_is_429_and_resets_on_the_clock`,
+  `tests/test_http_auth.py::test_non_message_body_is_32600`
 
 ## PROTO-D1: What must a server answer for an unsupported protocol version (2026-07-28)?
 - Decision: `mcpqa`'s check requires all of these:
@@ -139,7 +143,8 @@ Entry format:
   Its example lists both revisions, but mcp 2.3.0 lists only the revision of the request's
   own style, while still serving `2025-11-25` through `initialize`. Requiring the older
   version would fail every server built on this SDK over an example, not a rule.
-- Held by: (M3a Task 4)
+- Held by: `tests/test_conformance.py::test_handshake_checks_catch_their_broken_copies`
+  (`wrong-unsupported-version-error`), `tests/test_conformance.py::test_clean_server_passes_over_stdio`
 
 ## PROTO-D2: What must a 2025-11-25 server answer to `initialize` with a version it doesn't support?
 - Decision: a result whose `protocolVersion` is a version the server serves. An error fails
@@ -147,7 +152,8 @@ Entry format:
 - Why: the lifecycle page says the server "MUST respond with another protocol version it
   supports". An echo would let a client believe both sides agree on a version neither
   implements.
-- Held by: (M3a Task 4)
+- Held by: `tests/test_conformance.py::test_handshake_checks_catch_their_broken_copies`
+  (`echoes-unknown-version`)
 
 ## PROTO-D3: How is a target named?
 - Decision: `--target` takes one of three forms:
@@ -159,7 +165,7 @@ Entry format:
 - Why: Windows paths have backslashes and spaces, which shell splitting mangles, while a JSON
   array is exact on every OS. Tokens never go on a command line, where they end up in shell
   history and CI logs.
-- Held by: (M3a Task 3)
+- Held by: `tests/test_mcpqa_core.py::test_parse_target_forms`
 
 ## PROTO-D4: What does `energy_mcp` answer to a malformed stdio line?
 - Decision: `-32700` for a line that isn't JSON, with `id: null`. Anything else that isn't
@@ -167,7 +173,8 @@ Entry format:
   else `null`.
 - Why: JSON-RPC 2.0 says to reply, and to use `null` only when the id can't be read. An
   answer tells the client which line was bad; silence only makes it wait (F-13).
-- Held by: (M3a Task 2)
+- Held by: `tests/test_stdio_front.py::test_malformed_lines_get_an_answer`,
+  `tests/test_conformance.py::test_error_checks_catch_their_broken_copies` (`drops-malformed`)
 
 ## SRV-D1: What does a call with arguments that break the tool's schema return?
 - Decision: a tool execution error (`isError: true`), as the spec lists input validation

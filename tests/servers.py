@@ -23,6 +23,11 @@ from mcp import Client, StdioServerParameters
 from mcp.client.stdio import get_default_environment
 from mcp.client.streamable_http import streamable_http_client
 
+# Imported here, not inside a helper: pytester restores sys.modules after each test, and a
+# cryptography module imported during one test and re-imported in the next no longer matches
+# its own classes ("Padding must be an instance of AsymmetricPadding").
+from issuer import Issuer
+
 # Client(mode=...): "legacy" negotiates 2025-11-25 with initialize; "2026-07-28" pins the new revision.
 MODES = ("legacy", "2026-07-28")
 
@@ -234,8 +239,6 @@ class RawStdio:
 @contextmanager
 def authenticated_http_server(tmp_path: Path, *extra: str) -> Iterator[tuple[str, str]]:
     """A real HTTP server process with its own issuer key; yields its URL and a wall-clock read token."""
-    from issuer import Issuer
-
     port = free_port()
     issuer = Issuer(audience=f"http://127.0.0.1:{port}/mcp")
     key = tmp_path / "issuer.pem"

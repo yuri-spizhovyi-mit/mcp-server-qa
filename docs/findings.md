@@ -177,3 +177,17 @@ Entry format:
 - Status: fixed in M3a. The first message from a new process may take a separate
   `startup_timeout` (default 30 s); every later wait keeps the short bound. The silence the
   checks look for always comes after the process has answered something.
+
+## F-17: Over HTTP on 2025-11-25, the SDK answers a non-message with -32602 and repeats the input
+- Found by: `mcpqa`'s `test_invalid_request_is_32600` on the first clean run over HTTP (M3a
+  Task 7).
+- Evidence: POST `{"jsonrpc": "2.0", "id": 5}` with `MCP-Protocol-Version: 2025-11-25` got
+  `-32602` "Validation error: 4 validation errors for union[JSONRPCRequest, ...]", followed by
+  pydantic's full report. That report includes `input_value={'jsonrpc': '2.0', 'id': 5}`. The
+  spec says a message that isn't valid JSON-RPC is `-32600` Invalid Request. The 2026-07-28
+  path of the same SDK answers 400 `-32600`. The echo matters too: whatever the caller put in
+  the body comes back in the error, which SRV-D1 forbids.
+- Status: worked around in `energy_mcp`. The HTTP edge refuses any JSON object that isn't a
+  JSON-RPC 2.0 request, notification or response with 400 `-32600` "Invalid Request". It
+  keeps the request's `id` when that is an integer or string and echoes nothing else
+  (AUTH-D7). Held by `tests/test_http_auth.py::test_non_message_body_is_32600`.
