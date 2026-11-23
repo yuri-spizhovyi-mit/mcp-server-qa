@@ -1,0 +1,98 @@
+"""How a client and server agree on a revision: `initialize` (2025-11-25) and `server/discover` (2026-07-28).
+
+Spec: lifecycle, "Version Negotiation" (2025-11-25); versioning, "Protocol Version
+Negotiation", the `_meta` envelope, and Streamable HTTP "Server Validation" (2026-07-28).
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from mcpqa.plugin import not_applicable
+from mcpqa.protocol import CLIENT_INFO, LEGACY, MODERN, REVISIONS, Session, envelope, modern_headers
+from mcpqa.wire import HttpWire, Reply
+
+UNKNOWN_VERSION = "1900-01-01"
+
+
+def result_of(reply: Reply) -> dict[str, Any]:
+    result = (reply.message or {}).get("result")
+    assert isinstance(result, dict), f"expected a result, got HTTP {reply.status}: {reply.message}"
+    return result
+
+
+def error_of(reply: Reply, code: int) -> dict[str, Any]:
+    error = (reply.message or {}).get("error")
+    assert isinstance(error, dict), f"expected error {code}, got HTTP {reply.status}: {reply.message}"
+    assert error.get("code") == code, f"expected error {code}, got {error}"
+    return error
+
+
+def initialize(wire: Any, version: str) -> Reply:
+    return wire.exchange({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": version, "capabilities": {}, "clientInfo": CLIENT_INFO}})
+
+
+@pytest.mark.mcpqa_revisions(LEGACY)
+def test_legacy_initialize(revision: str, session: Session, fresh_wire: Any) -> None:
+    """MUST answer with the requested version when it supports it, plus serverInfo and capabilities."""
+    result = result_of(initialize(fresh_wire, LEGACY))
+    assert result.get("protocolVersion") == LEGACY
+    info = result.get("serverInfo")
+    assert isinstance(info, dict) and isinstance(info.get("name"), str) and isinstance(info.get("version"), str), info
+    assert isinstance(result.get("capabilities"), dict)
+
+
+@pytest.mark.mcpqa_revisions(LEGACY)
+def test_legacy_negotiates_unknown_version(revision: str, session: Session, fresh_wire: Any) -> None:
+    """PROTO-D2: an unsupported requested version MUST get "another protocol version it supports"."""
+    result = result_of(initialize(fresh_wire, UNKNOWN_VERSION))
+    assert result.get("protocolVersion") in REVISIONS, f"answered {result.get('protocolVersion')!r}"
+
+
+@pytest.mark.mcpqa_revisions(MODERN)
+def test_discover(revision: str, session: Session) -> None:
+    """Servers MUST implement server/discover."""
+    result = result_of(session.request("server/discover"))
+    assert result.get("resultType") == "complete"
+    assert MODERN in (result.get("supportedVersions") or []), result.get("supportedVersions")
+    assert isinstance(result.get("capabilities"), dict)
+
+
+@pytest.mark.mcpqa_revisions(MODERN)
+def test_unsupported_version_is_32022(revision: str, session: Session, fresh_wire: Any) -> None:
+    """PROTO-D1: -32022 with data.supported and data.requested; HTTP 400."""
+    message = {"jsonrpc": "2.0", "id": session.next_id(), "method": "tools/list",
+               "params": {"_meta": envelope(UNKNOWN_VERSION)}}
+    reply = session.wire.exchange(message, modern_headers("tools/list", version=UNKNOWN_VERSION))
+    data = error_of(reply, -32022).get("data")
+    assert isinstance(data, dict) and data.get("requested") == UNKNOWN_VERSION, data
+    supported = data.get("supported")
+    assert isinstance(supported, list) and MODERN in supported, supported
+    if LEGACY in supported:  # a listed version must really be served
+        result_of(initialize(fresh_wire, LEGACY))
+    if isinstance(session.wire, HttpWire):
+        assert reply.status == 400
+
+
+@pytest.mark.mcpqa_revisions(MODERN)
+def test_missing_envelope_is_32602(revision: str, session: Session) -> None:
+    """A request missing a required _meta field is malformed: MUST be -32602 (HTTP 400)."""
+    message = {"jsonrpc": "2.0", "id": session.next_id(), "method": "tools/list", "params": {}}
+    reply = session.wire.exchange(message, modern_headers("tools/list"))
+    error_of(reply, -32602)
+    if isinstance(session.wire, HttpWire):
+        assert reply.status == 400
+
+
+@pytest.mark.mcpqa_revisions(MODERN)
+def test_header_mismatch_is_32020(revision: str, session: Session) -> None:
+    """A header that doesn't match the body is HTTP 400 with -32020 (HeaderMismatch)."""
+    if not isinstance(session.wire, HttpWire):
+        not_applicable("headers exist only over HTTP")
+    message, headers = session.message("tools/list")
+    reply = session.wire.exchange(message, {**headers, "mcp-method": "prompts/list"})
+    error_of(reply, -32020)
+    assert reply.status == 400

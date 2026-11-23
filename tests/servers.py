@@ -11,9 +11,11 @@ import threading
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 import httpx2
 import jsonschema
@@ -235,3 +237,38 @@ def authenticated_http_server(tmp_path: Path, *extra: str) -> Iterator[tuple[str
     key.write_bytes(issuer.public_pem)
     with http_server(port, *extra, public_key=key, issuer=issuer.issuer) as url:
         yield url, issuer.mint(scope="meters:read alerts:read reports:read", now=time.time())
+
+
+@dataclass
+class McpqaReport:
+    passed: set[str]
+    failed: set[str]
+    skipped: dict[str, str]
+    output: str
+
+
+def run_mcpqa(pytester: Any, target: str, *extra: str, env: dict[str, str] | None = None) -> McpqaReport:
+    """Run mcpqa's conformance checks against `target` as an outsider would, in a clean pytest process.
+
+    Results are read from a JUnit XML report and grouped by check name (a check that fails on
+    one revision counts as failed). `-c` points at an empty ini, so the repo's own pytest
+    settings play no part.
+    """
+    ini = pytester.makeini("[pytest]\n")
+    report = pytester.path / "mcpqa-report.xml"
+    for name, value in (env or {}).items():
+        pytester._monkeypatch.setenv(name, value)
+    result = pytester.runpytest_subprocess("-c", str(ini), "--pyargs", "mcpqa.conformance", "--target", target,
+                                           "--mcpqa-timeout", "5", "-p", "no:cacheprovider",
+                                           f"--junitxml={report}", *extra)
+    passed, failed, skipped = set(), set(), {}
+    for case in ElementTree.parse(report).getroot().iter("testcase"):
+        name = case.get("name", "").split("[", 1)[0]
+        if case.find("failure") is not None or case.find("error") is not None:
+            failed.add(name)
+        elif (skip := case.find("skipped")) is not None:
+            skipped[name] = skip.get("message", "")
+        else:
+            passed.add(name)
+    return McpqaReport(passed - failed, failed, {k: v for k, v in skipped.items() if k not in failed},
+                       "\n".join(result.outlines))
