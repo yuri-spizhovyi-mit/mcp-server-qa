@@ -10,24 +10,12 @@ from typing import Any
 
 import pytest
 
+from mcpqa.expect import error_of, result_of
 from mcpqa.plugin import not_applicable
 from mcpqa.protocol import CLIENT_INFO, LEGACY, MODERN, REVISIONS, Session, envelope, modern_headers
 from mcpqa.wire import HttpWire, Reply
 
 UNKNOWN_VERSION = "1900-01-01"
-
-
-def result_of(reply: Reply) -> dict[str, Any]:
-    result = (reply.message or {}).get("result")
-    assert isinstance(result, dict), f"expected a result, got HTTP {reply.status}: {reply.message}"
-    return result
-
-
-def error_of(reply: Reply, code: int) -> dict[str, Any]:
-    error = (reply.message or {}).get("error")
-    assert isinstance(error, dict), f"expected error {code}, got HTTP {reply.status}: {reply.message}"
-    assert error.get("code") == code, f"expected error {code}, got {error}"
-    return error
 
 
 def initialize(wire: Any, version: str) -> Reply:

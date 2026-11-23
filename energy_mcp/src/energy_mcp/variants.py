@@ -13,6 +13,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from mcp.shared.exceptions import MCPError
+from mcp_types.jsonrpc import INTERNAL_ERROR, METHOD_NOT_FOUND
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 Message = dict[str, Any]
@@ -27,6 +29,14 @@ class Variant:
     outgoing: Callable[[Message], Message | None] | None = None
     asgi: Callable[[ASGIApp], ASGIApp] | None = None
     transport: Literal["stdio", "http"] = "stdio"
+    answer_malformed: bool = True
+    strict_unknown_tool: bool = True
+    reject_list_cursors: bool = True
+
+    def server_options(self) -> dict[str, Any]:
+        """Keyword arguments for `build_server`."""
+        return {"extra_middleware": self.middleware, "strict_unknown_tool": self.strict_unknown_tool,
+                "reject_list_cursors": self.reject_list_cursors}
 
 
 def _result(message: Message) -> dict[str, Any] | None:
@@ -73,6 +83,22 @@ async def _echo_requested_version(ctx: Any, call_next: Callable[[Any], Awaitable
             return {**result, "protocolVersion": requested}
         return result.model_copy(update={"protocol_version": requested})
     return result
+
+
+async def _internal_for_unknown_method(ctx: Any, call_next: Callable[[Any], Awaitable[Any]]) -> Any:
+    try:
+        return await call_next(ctx)
+    except MCPError as error:
+        if error.error.code == METHOD_NOT_FOUND:
+            raise MCPError(code=INTERNAL_ERROR, message="Internal error") from None
+        raise
+
+
+def _without_tools_capability(message: Message) -> Message:
+    result = _result(message)
+    if result is not None and isinstance(result.get("capabilities"), dict):
+        result["capabilities"].pop("tools", None)
+    return message
 
 
 def _ignore_header_mismatch(app: ASGIApp) -> ASGIApp:
@@ -128,4 +154,16 @@ VARIANTS: dict[str, Variant] = {
     "ignores-header-mismatch": Variant(
         "Mcp-Method is overwritten with the body's method, so a mismatch is never refused", "PROTO-03",
         frozenset({"test_header_mismatch_is_32020"}), asgi=_ignore_header_mismatch, transport="http"),
+    "drops-malformed": Variant(
+        "the stdio front is off: malformed lines get no answer (F-13)", "PROTO-05",
+        frozenset({"test_parse_error_is_32700", "test_invalid_request_is_32600"}), answer_malformed=False),
+    "internal-for-unknown-method": Variant(
+        "an unknown method gets -32603 instead of -32601", "PROTO-05",
+        frozenset({"test_unknown_method_is_32601"}), middleware=(_internal_for_unknown_method,)),
+    "unknown-tool-is-result": Variant(
+        "an unknown tool gets the SDK's isError result instead of -32602 (F-01)", "PROTO-05",
+        frozenset({"test_unknown_tool_is_32602"}), strict_unknown_tool=False),
+    "undeclared-tools": Variant(
+        "tools are served but not declared in the capabilities", "PROTO-04",
+        frozenset({"test_declared_capabilities_work"}), outgoing=_without_tools_capability),
 }

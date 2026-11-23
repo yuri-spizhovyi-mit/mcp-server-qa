@@ -56,9 +56,21 @@ def test_envelope_checks_catch_their_broken_copies(pytester: pytest.Pytester, na
     check_broken_copy(pytester, name)
 
 
+@pytest.mark.req("PROTO-04")
+@pytest.mark.parametrize("name", variants_for("PROTO-04"))
+def test_capability_checks_catch_their_broken_copies(pytester: pytest.Pytester, name: str) -> None:
+    check_broken_copy(pytester, name)
+
+
+@pytest.mark.req("PROTO-05")
+@pytest.mark.parametrize("name", variants_for("PROTO-05"))
+def test_error_checks_catch_their_broken_copies(pytester: pytest.Pytester, name: str) -> None:
+    check_broken_copy(pytester, name)
+
+
 @pytest.mark.req("PROTO-08")
 def test_every_broken_copy_is_tested() -> None:
     """A variant whose requirement has no test function here would never run."""
-    tested = {"PROTO-02", "PROTO-03"}
+    tested = {"PROTO-02", "PROTO-03", "PROTO-04", "PROTO-05"}
     stdio = {n for n, v in VARIANTS.items() if v.transport == "stdio"}
     assert {n for n in stdio if VARIANTS[n].requirement in tested} == stdio

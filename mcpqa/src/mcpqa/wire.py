@@ -42,9 +42,13 @@ def _matches(message: Any, expected: Any, accept_null_id: bool) -> bool:
 
 
 class StdioWire:
+    """A server subprocess. Its first message may take `startup_timeout` (the process is still
+    starting); every later wait is bounded by `timeout`, so silence is never confused with startup."""
+
     def __init__(self, argv: tuple[str, ...] | list[str], env: Mapping[str, str] | None = None,
-                 timeout: float = 10.0) -> None:
+                 timeout: float = 10.0, startup_timeout: float = 30.0) -> None:
         self.timeout = timeout
+        self._startup_left = max(startup_timeout, timeout)
         self.noise: list[str] = []
         self._lines: queue.Queue[bytes | None] = queue.Queue()
         self.process = subprocess.Popen(list(argv), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -66,7 +70,7 @@ class StdioWire:
 
     def read(self, deadline: float | None = None) -> dict[str, Any] | None:
         """The next JSON message on stdout; non-JSON lines go to `noise`."""
-        deadline = time.monotonic() + self.timeout if deadline is None else deadline
+        deadline = time.monotonic() + self._bound() if deadline is None else deadline
         while (left := deadline - time.monotonic()) > 0:
             try:
                 line = self._lines.get(timeout=left)
@@ -75,16 +79,20 @@ class StdioWire:
             if line is None:
                 self._lines.put(None)
                 raise ConnectionError("the server closed its stdout")
+            self._startup_left = 0.0  # the process has started: it wrote something
             try:
                 return json.loads(line)
             except ValueError:
                 self.noise.append(line.decode("utf-8", "replace").rstrip("\r\n"))
-        raise TimeoutError(f"no message from the server within {self.timeout} s")
+        raise TimeoutError(f"no message from the server within {self._bound()} s")
+
+    def _bound(self) -> float:
+        return self._startup_left or self.timeout
 
     def exchange(self, message: dict[str, Any] | bytes, headers: Mapping[str, str] | None = None,
                  accept_null_id: bool = False) -> Reply:
         self.send(message)
-        expected, deadline = _expected_id(message), time.monotonic() + self.timeout
+        expected, deadline = _expected_id(message), time.monotonic() + self._bound()
         while True:
             answer = self.read(deadline)
             if _matches(answer, expected, accept_null_id or not isinstance(message, dict)):

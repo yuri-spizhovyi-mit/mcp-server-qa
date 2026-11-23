@@ -137,15 +137,18 @@ def _tools(world: World, clock: Callable[[], datetime], identity: Identity) -> l
 
 def build_server(world: World | None = None, *, clock: Callable[[], datetime] = utc_now,
                  identity: Identity = Identity("local-operator", READ_SCOPES),
-                 extra_middleware: tuple[Any, ...] = ()) -> MCPServer:
+                 extra_middleware: tuple[Any, ...] = (), strict_unknown_tool: bool = True,
+                 reject_list_cursors: bool = True) -> MCPServer:
     """`identity` is the caller when no token is present: stdio and in-process (AUTH-D3).
 
-    `extra_middleware` runs outermost; only broken copies (`variants.py`) pass any.
+    `extra_middleware` runs outermost; it and the two guard flags are for broken copies only
+    (`variants.py`).
     """
     world = build_world() if world is None else world
     tools = _tools(world, clock, identity)
     assert tuple(t.name for t in tools) == TOOL_NAMES
-    guard = ArgumentGuard({t.name: t.parameters for t in tools}, PROMPT_ARGS)
+    guard = ArgumentGuard({t.name: t.parameters for t in tools}, PROMPT_ARGS, strict_unknown_tool=strict_unknown_tool,
+                          reject_list_cursors=reject_list_cursors)
     # The first middleware is the outermost: scopes are checked before arguments.
     server = MCPServer("energy-mcp", version=__version__, tools=tools,
                        middleware=[*extra_middleware, ScopeGuard(identity), guard])

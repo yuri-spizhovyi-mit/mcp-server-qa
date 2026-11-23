@@ -71,11 +71,12 @@ LIST_METHODS = frozenset({"tools/list", "resources/list", "resources/templates/l
 class ArgumentGuard:
     def __init__(self, tool_schemas: Mapping[str, Mapping[str, Any]],
                  prompt_args: Mapping[str, tuple[frozenset[str], frozenset[str]]] | None = None,
-                 *, reject_list_cursors: bool = True) -> None:
+                 *, reject_list_cursors: bool = True, strict_unknown_tool: bool = True) -> None:
         self._validators = {name: StrictValidator(dict(schema)) for name, schema in tool_schemas.items()}
         # prompt name -> (required argument names, allowed argument names)
         self._prompt_args = dict(prompt_args or {})
         self._reject_list_cursors = reject_list_cursors
+        self._strict_unknown_tool = strict_unknown_tool  # False only in a broken copy: the SDK's isError (F-01)
 
     async def __call__(self, ctx: Any, call_next: Callable[[Any], Awaitable[Any]]) -> Any:
         params = ctx.params if isinstance(ctx.params, Mapping) else {}
@@ -91,6 +92,8 @@ class ArgumentGuard:
 
     def _check_tool(self, name: str, arguments: Any) -> CallToolResult | None:
         validator = self._validators.get(name)
+        if validator is None and not self._strict_unknown_tool:
+            return None
         if validator is None:
             available = ", ".join(sorted(self._validators))  # the caller's name is not echoed (SRV-D1)
             raise MCPError(code=INVALID_PARAMS, message=f"Unknown tool; available: {available}")

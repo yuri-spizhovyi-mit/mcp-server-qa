@@ -68,8 +68,8 @@ def main(argv: list[str] | None = None) -> None:
         if variant is None:
             run_stdio(build_server(world, identity=identity))
         else:
-            run_stdio(build_server(world, identity=identity, extra_middleware=variant.middleware),
-                      outgoing=variant.outgoing)
+            run_stdio(build_server(world, identity=identity, **variant.server_options()),
+                      outgoing=variant.outgoing, answer_malformed=variant.answer_malformed)
         return
     with open(args.public_key, "rb") as key:
         settings = TokenSettings(issuer=args.issuer, audience=args.resource or f"http://{args.host}:{args.port}/mcp",

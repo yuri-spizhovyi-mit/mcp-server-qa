@@ -71,7 +71,7 @@ def test_wire_closes_its_process_on_error(tmp_path: Path) -> None:
 def test_silence_is_a_timeout(tmp_path: Path) -> None:
     script = tmp_path / "silent.py"
     script.write_text("import sys\nfor _ in sys.stdin: pass\n", encoding="utf-8")
-    with StdioWire([sys.executable, str(script)], timeout=0.5) as wire, pytest.raises(TimeoutError):
+    with StdioWire([sys.executable, str(script)], timeout=0.5, startup_timeout=0.5) as wire, pytest.raises(TimeoutError):
         wire.exchange({"jsonrpc": "2.0", "id": 1, "method": "x"})
 
 

@@ -179,12 +179,16 @@ async def post_call(client: httpx2.AsyncClient, name: str, arguments: Any = None
 class RawStdio:
     """Raw JSON lines to a subprocess's stdin, answers read from its stdout (for protocol edge cases).
 
-    `read()` returns the next JSON message, or None after `timeout`. Lines on stdout that are not
-    JSON go to `noise`. The process is killed on exit, whatever state it is in.
+    `read()` returns the next JSON message, or None after `timeout`. The first read may also take
+    `startup_timeout`, because the process is still starting: importing the SDK takes seconds on
+    a busy Windows machine (F-16). Lines on stdout that are not JSON go to `noise`. The process
+    is killed on exit, whatever state it is in.
     """
 
-    def __init__(self, argv: list[str], env: dict[str, str] | None = None, timeout: float = 5.0) -> None:
+    def __init__(self, argv: list[str], env: dict[str, str] | None = None, timeout: float = 5.0,
+                 startup_timeout: float = 30.0) -> None:
         self.timeout = timeout
+        self._startup_left = max(startup_timeout, timeout)
         self.noise: list[str] = []
         self._lines: queue.Queue[bytes | None] = queue.Queue()
         self.proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -202,7 +206,7 @@ class RawStdio:
         self.proc.stdin.flush()
 
     def read(self) -> dict | None:
-        deadline = time.monotonic() + self.timeout
+        deadline = time.monotonic() + (self._startup_left or self.timeout)
         while (left := deadline - time.monotonic()) > 0:
             try:
                 line = self._lines.get(timeout=left)
@@ -210,6 +214,7 @@ class RawStdio:
                 return None
             if line is None:
                 return None
+            self._startup_left = 0.0  # the process has started: it wrote something
             try:
                 return json.loads(line)
             except ValueError:

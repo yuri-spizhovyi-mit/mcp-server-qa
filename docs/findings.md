@@ -165,3 +165,15 @@ Entry format:
   (`@modelcontextprotocol/server` 2.x), whose client is `@modelcontextprotocol/client`
   2.4.0.
 - Status: fixed in the plan. M3b uses `@modelcontextprotocol/client` 2.4.0.
+
+## F-16: The stdio harness counted server startup as silence (a harness bug)
+- Found by: a full-suite run during M3a Task 5 that failed 7 tests with timeouts. The same
+  tests had passed minutes earlier.
+- Evidence: importing the MCP SDK (`import mcp`) took 5 to 6 s on this laptop that afternoon,
+  against about 1 s before (`python -X importtime`), while a bare `python -c pass` took
+  0.3 s. `RawStdio` and `mcpqa`'s `StdioWire` used one 5 s bound for every read, including the
+  first one after starting the process, so a slow start looked exactly like a server that
+  never answers. A check of "silence" was measuring the machine, not the server.
+- Status: fixed in M3a. The first message from a new process may take a separate
+  `startup_timeout` (default 30 s); every later wait keeps the short bound. The silence the
+  checks look for always comes after the process has answered something.
