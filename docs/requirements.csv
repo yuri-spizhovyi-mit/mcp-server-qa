@@ -19,3 +19,4 @@ AUTH-04,Auth,high,"Every tool, resource read and prompt needs its scope (meters:
 AUTH-05,Auth,high,"alerts:write:<alert_id> lets a caller acknowledge that alert only; alerts:write covers every alert; a malformed or missing alert_id needs alerts:write."
 AUTH-07,Auth,high,"Without HTTP, the identity comes from ENERGY_MCP_SCOPES (default read-only) and ENERGY_MCP_OPERATOR; unknown scopes or a malformed operator are refused at startup; the acknowledging operator is recorded."
 AUTH-08,Auth,high,"Over HTTP, the caller is the token's principal: a session opened by one principal answers 404 to another, and acknowledge_alert records the token's sub."
+AUTH-06,Auth,medium,"Over HTTP, each principal gets limit authenticated requests per window on the server's clock; the next one gets 429 with Retry-After, before scope checks and before the server runs; the window resets on the clock; a new token for the same principal does not reset it; other principals are unaffected."

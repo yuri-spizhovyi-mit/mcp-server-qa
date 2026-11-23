@@ -5,13 +5,13 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**20 requirements, 20 traced: 92 requirement-test links.**
+**21 requirements, 21 traced: 99 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
 | Server | 8 | 39 | 5 |
-| Auth | 7 | 33 | 6 |
+| Auth | 8 | 40 | 6 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -35,3 +35,4 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | AUTH-05 | high | alerts:write:<alert_id> lets a caller acknowledge that alert only; alerts:write covers every alert; a malformed or missing alert_id needs alerts:write. | `test_per_alert_token_over_http`<br>`test_hierarchy`<br>`test_per_alert_identity_in_process` |
 | AUTH-07 | high | Without HTTP, the identity comes from ENERGY_MCP_SCOPES (default read-only) and ENERGY_MCP_OPERATOR; unknown scopes or a malformed operator are refused at startup; the acknowledging operator is recorded. | `test_identity_from_env`<br>`test_in_process_default_is_read_only` |
 | AUTH-08 | high | Over HTTP, the caller is the token's principal: a session opened by one principal answers 404 to another, and acknowledge_alert records the token's sub. | `test_acknowledged_by_is_the_token_subject`<br>`test_session_belongs_to_its_principal` |
+| AUTH-06 | medium | Over HTTP, each principal gets limit authenticated requests per window on the server's clock; the next one gets 429 with Retry-After, before scope checks and before the server runs; the window resets on the clock; a new token for the same principal does not reset it; other principals are unaffected. | `test_limiter_counts_and_resets`<br>`test_call_n_plus_one_is_429_and_resets_on_the_clock`<br>`test_new_token_same_principal_stays_limited`<br>`test_other_principal_unaffected`<br>`test_refused_scope_calls_count`<br>`test_limited_call_never_reaches_the_server`<br>`test_unauthenticated_requests_are_not_counted` |

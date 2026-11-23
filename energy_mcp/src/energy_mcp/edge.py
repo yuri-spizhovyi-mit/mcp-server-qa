@@ -1,7 +1,7 @@
 """The HTTP edge: one ASGI layer in front of the SDK's Streamable HTTP app (M2, approach A).
 
 For every request except the RFC 9728 metadata it answers, in this order:
-401 (no usable bearer token), 400 (a body it can't read
+401 (no usable bearer token), 429 (rate limit per principal), 400 (a body it can't read
 for certain), 403 (the call's scope is missing). Only then does the SDK see the request,
 with the token's principal in `scope["user"]` (the SDK binds sessions to it) and in the
 SDK's auth context (where `ScopeGuard` and the tools find the caller).
@@ -13,6 +13,7 @@ from what the caller sent (SRV-D1). The body is read once, bounded, and replayed
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -21,12 +22,13 @@ from urllib.parse import urlsplit
 from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp.server.auth.provider import AccessToken, TokenVerifier
+from mcp.server.auth.provider import AccessToken, TokenVerifier, principal_components
 from mcp.shared.auth import ProtectedResourceMetadata
 from starlette.authentication import AuthCredentials
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from energy_mcp.access import NO_ACCESS
+from energy_mcp.ratelimit import RateLimiter
 from energy_mcp.scopes import BASE_SCOPES, READ_SCOPES, missing, needed
 from energy_mcp.server import build_server, utc_now
 from energy_mcp.tokens import JwtVerifier, TokenSettings
@@ -67,8 +69,8 @@ async def _respond(send: Send, status: int, body: dict[str, Any], headers: dict[
 
 class AuthEdge:
     def __init__(self, app: ASGIApp, verifier: TokenVerifier, *, resource_url: str, issuer: str,
-                 max_body: int = MAX_BODY) -> None:
-        self.app, self.verifier, self.max_body = app, verifier, max_body
+                 limiter: RateLimiter | None = None, max_body: int = MAX_BODY) -> None:
+        self.app, self.verifier, self.limiter, self.max_body = app, verifier, limiter, max_body
         self.resource_url, self.issuer = resource_url, issuer
         self.metadata_url = metadata_url(resource_url)
         self.metadata_path = urlsplit(self.metadata_url).path
@@ -95,6 +97,10 @@ class AuthEdge:
         token = None if credentials is None else await self.verifier.verify_token(credentials)
         if token is None:
             await self._unauthorized(send, needs, sent=credentials is not None)
+            return
+        if self.limiter is not None and (retry := self.limiter.hit(principal_components(token))) is not None:
+            await _respond(send, 429, {"error": "rate_limited", "error_description": "Too many requests"},
+                           {"retry-after": str(max(1, math.ceil(retry)))})
             return
         if message is UNREADABLE:
             await _respond(send, 400, {"jsonrpc": "2.0", "id": None,
@@ -160,9 +166,10 @@ class AuthEdge:
 
 
 def build_http_app(world: World, *, settings: TokenSettings, clock: Callable[[], float],
-                   wall_clock: Callable[[], datetime] = utc_now, max_body: int = MAX_BODY) -> tuple[AuthEdge, MCPServer]:
+                   wall_clock: Callable[[], datetime] = utc_now, rate_limit: int = 60, rate_window: float = 60.0,
+                   max_body: int = MAX_BODY) -> tuple[AuthEdge, MCPServer]:
     """The server behind the edge has no fallback scopes (AUTH-D6): bypass the edge and nothing is allowed."""
     server = build_server(world, clock=wall_clock, identity=NO_ACCESS)
     edge = AuthEdge(server.streamable_http_app(), JwtVerifier(settings, clock), resource_url=settings.audience,
-                    issuer=settings.issuer, max_body=max_body)
+                    issuer=settings.issuer, limiter=RateLimiter(rate_limit, rate_window, clock), max_body=max_body)
     return edge, server
