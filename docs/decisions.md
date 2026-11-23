@@ -98,6 +98,34 @@ Entry format:
 - Held by: `tests/test_cli_auth.py::test_http_needs_key_and_issuer`,
   `tests/test_http_auth.py::test_scope_guard_holds_if_the_edge_lets_a_call_through`
 
+## AUTH-D7: What does the HTTP edge do with a request it can't read for certain?
+- Decision: the edge decides on every request itself and hands the SDK only what it read for
+  certain.
+  - A POST body that is not one UTF-8 JSON object without duplicate keys gets 400 with a
+    JSON-RPC `-32700` body. Arrays, invalid JSON, non-UTF-8 and duplicate keys at any depth
+    are all refused. The content type is ignored: the body is read whatever it claims.
+  - A body over `max_body` (default 4 MiB) gets 413.
+  - A client that hangs up before the body is complete gets nothing, and nothing is handed
+    on.
+  - The order is 401, then 429, then 400, then 403, so an unauthenticated caller learns
+    nothing about the body.
+  - Every path except the RFC 9728 metadata needs a token, not only `/mcp`.
+  - `Retry-After` is at least 1.
+- Why: the scope check is only as good as the edge's reading of the call. If the edge and
+  the SDK could read one body differently (which duplicate key wins, a truncated body
+  replayed as complete), a write could pass the edge's check. Today the SDK keeps the last
+  duplicate key, as Python does, and rejects batches itself. The edge doesn't rely on
+  either. Guarding every path means a trailing slash or a future route can't sit outside
+  the edge. The plan first said unreadable bodies would be "handed to the SDK"; this is
+  stricter, made during M2 and recorded in the plan.
+- Held by: `tests/test_http_auth.py::test_unreadable_bodies_cannot_write`,
+  `tests/test_http_auth.py::test_a_complete_raw_request_gets_through`,
+  `tests/test_http_auth.py::test_content_type_does_not_hide_a_call`,
+  `tests/test_http_auth.py::test_body_over_the_limit_is_refused`,
+  `tests/test_http_auth.py::test_aborted_request_is_not_executed`,
+  `tests/test_http_auth.py::test_every_path_but_metadata_needs_a_token`,
+  `tests/test_rate_limit.py::test_call_n_plus_one_is_429_and_resets_on_the_clock`
+
 ## SRV-D1: What does a call with arguments that break the tool's schema return?
 - Decision: a tool execution error (`isError: true`), as the spec lists input validation
   errors. The text is `Invalid arguments for tool <name>: <path>: <rule>; ...`. It names the
