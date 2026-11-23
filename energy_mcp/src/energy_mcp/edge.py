@@ -167,9 +167,10 @@ class AuthEdge:
 
 def build_http_app(world: World, *, settings: TokenSettings, clock: Callable[[], float],
                    wall_clock: Callable[[], datetime] = utc_now, rate_limit: int = 60, rate_window: float = 60.0,
-                   max_body: int = MAX_BODY) -> tuple[AuthEdge, MCPServer]:
+                   max_body: int = MAX_BODY, host: str = "127.0.0.1") -> tuple[AuthEdge, MCPServer]:
     """The server behind the edge has no fallback scopes (AUTH-D6): bypass the edge and nothing is allowed."""
     server = build_server(world, clock=wall_clock, identity=NO_ACCESS)
-    edge = AuthEdge(server.streamable_http_app(), JwtVerifier(settings, clock), resource_url=settings.audience,
+    # host: the SDK's DNS-rebinding check accepts only this host's names in the Host header
+    edge = AuthEdge(server.streamable_http_app(host=host), JwtVerifier(settings, clock), resource_url=settings.audience,
                     issuer=settings.issuer, limiter=RateLimiter(rate_limit, rate_window, clock), max_body=max_body)
     return edge, server

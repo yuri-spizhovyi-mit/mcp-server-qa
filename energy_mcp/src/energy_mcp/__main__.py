@@ -1,34 +1,71 @@
-"""Run the server: `python -m energy_mcp [--transport stdio|http] [--host H] [--port P] [--seed N]`.
+"""Run the server: `python -m energy_mcp [--transport stdio|http] [--host H] [--port P] [--seed N] ...`.
 
-stdio is the default (what Claude Code and the desktop app launch). HTTP binds to 127.0.0.1
-unless told otherwise, and serves Streamable HTTP at /mcp. On stdio, stdout belongs to the
-protocol: nothing else may print there (the SDK logs to stderr).
+stdio is the default (what Claude Code and the desktop app launch). Its caller is read from
+the environment (AUTH-D3): `ENERGY_MCP_SCOPES` (space-separated, default read-only) and
+`ENERGY_MCP_OPERATOR`. On stdio, stdout belongs to the protocol: nothing else may print there
+(the SDK logs to stderr).
+
+HTTP binds to 127.0.0.1 unless told otherwise and serves Streamable HTTP at /mcp behind the
+auth edge. It needs the token issuer's public key and name (AUTH-D6); there is no
+unauthenticated HTTP mode.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
+import time
 
+import uvicorn
+
+from energy_mcp.access import identity_from_env
+from energy_mcp.edge import build_http_app
 from energy_mcp.server import build_server
+from energy_mcp.tokens import TokenSettings
 from energy_mcp.world import build_world
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="energy-mcp", description="The energy_mcp MCP server (synthetic data).")
     parser.add_argument("--transport", choices=("stdio", "http"), default="stdio")
     parser.add_argument("--host", default="127.0.0.1", help="HTTP only (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="HTTP only (default: 8000)")
     parser.add_argument("--seed", type=int, default=42, help="seed of the synthetic world (default: 42)")
-    return parser.parse_args(argv)
+    parser.add_argument("--public-key", help="HTTP only, required: PEM file with the token issuer's public key")
+    parser.add_argument("--issuer", help="HTTP only, required: the token issuer (the tokens' iss)")
+    parser.add_argument("--resource", help="HTTP only: this server's URL, also the tokens' audience "
+                                           "(default: http://HOST:PORT/mcp)")
+    parser.add_argument("--rate-limit", type=int, default=60, help="HTTP only: requests per window per caller")
+    parser.add_argument("--rate-window", type=float, default=60.0, help="HTTP only: window in seconds")
+    return parser
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.transport == "http" and not (args.public_key and args.issuer):
+        parser.error("HTTP needs --public-key and --issuer (there is no unauthenticated HTTP mode)")
+    if args.rate_limit < 1 or args.rate_window <= 0:
+        parser.error("--rate-limit must be at least 1 and --rate-window above 0")
+    return args
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    server = build_server(build_world(args.seed))
+    world = build_world(args.seed)
     if args.transport == "stdio":
-        server.run("stdio")
-    else:
-        server.run("streamable-http", host=args.host, port=args.port)
+        try:
+            identity = identity_from_env(os.environ)
+        except ValueError as error:
+            _parser().error(str(error))
+        build_server(world, identity=identity).run("stdio")
+        return
+    with open(args.public_key, "rb") as key:
+        settings = TokenSettings(issuer=args.issuer, audience=args.resource or f"http://{args.host}:{args.port}/mcp",
+                                 public_key_pem=key.read())
+    app, _ = build_http_app(world, settings=settings, clock=time.time, rate_limit=args.rate_limit,
+                            rate_window=args.rate_window, host=args.host)
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

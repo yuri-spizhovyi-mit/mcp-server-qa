@@ -5,13 +5,13 @@ hand. CI fails if a requirement has no test, a test cites an unknown requirement
 this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirements:
 [`requirements.csv`](requirements.csv).
 
-**21 requirements, 21 traced: 99 requirement-test links.**
+**22 requirements, 22 traced: 105 requirement-test links.**
 
 | Area | Requirements | Links | High-risk |
 |---|---|---|---|
 | Environment | 5 | 20 | 3 |
 | Server | 8 | 39 | 5 |
-| Auth | 8 | 40 | 6 |
+| Auth | 9 | 46 | 7 |
 
 | ID | Risk | Requirement | Tests |
 |---|---|---|---|
@@ -33,6 +33,7 @@ this file is stale (ENV-04). Full test lists: [`rtm.csv`](rtm.csv). The requirem
 | AUTH-03 | medium | RFC 9728 metadata is served without auth at /.well-known/oauth-protected-resource/mcp with resource, authorization_servers = [issuer], scopes_supported = the four base scopes and bearer_methods_supported = [header]. | `test_metadata_document`<br>`test_f12_sdk_metadata_scopes_are_the_required_scopes` |
 | AUTH-04 | high | Every tool, resource read and prompt needs its scope (meters:read, alerts:read, reports:read, alerts:write) on every transport; listing needs none; a refused call never changes the world. | `test_each_call_needs_its_scope`<br>`test_listing_needs_only_a_valid_token`<br>`test_refused_calls_leave_the_world_unchanged`<br>`test_unreadable_bodies_cannot_write`<br>`test_a_complete_raw_request_gets_through`<br>`test_scope_guard_holds_if_the_edge_lets_a_call_through`<br>`test_body_over_the_limit_is_refused`<br>`test_needed_scopes_per_method`<br>`test_guard_refuses_without_scope_in_process`<br>`test_listing_needs_no_scope_in_process`<br>`test_scope_is_checked_before_arguments` |
 | AUTH-05 | high | alerts:write:<alert_id> lets a caller acknowledge that alert only; alerts:write covers every alert; a malformed or missing alert_id needs alerts:write. | `test_per_alert_token_over_http`<br>`test_hierarchy`<br>`test_per_alert_identity_in_process` |
-| AUTH-07 | high | Without HTTP, the identity comes from ENERGY_MCP_SCOPES (default read-only) and ENERGY_MCP_OPERATOR; unknown scopes or a malformed operator are refused at startup; the acknowledging operator is recorded. | `test_identity_from_env`<br>`test_in_process_default_is_read_only` |
+| AUTH-07 | high | Without HTTP, the identity comes from ENERGY_MCP_SCOPES (default read-only) and ENERGY_MCP_OPERATOR; unknown scopes or a malformed operator are refused at startup; the acknowledging operator is recorded. | `test_bad_env_identity_stops_stdio`<br>`test_stdio_process_is_read_only_by_default`<br>`test_stdio_process_with_write_scope_records_operator`<br>`test_identity_from_env`<br>`test_in_process_default_is_read_only` |
 | AUTH-08 | high | Over HTTP, the caller is the token's principal: a session opened by one principal answers 404 to another, and acknowledge_alert records the token's sub. | `test_acknowledged_by_is_the_token_subject`<br>`test_session_belongs_to_its_principal` |
 | AUTH-06 | medium | Over HTTP, each principal gets limit authenticated requests per window on the server's clock; the next one gets 429 with Retry-After, before scope checks and before the server runs; the window resets on the clock; a new token for the same principal does not reset it; other principals are unaffected. | `test_limiter_counts_and_resets`<br>`test_call_n_plus_one_is_429_and_resets_on_the_clock`<br>`test_new_token_same_principal_stays_limited`<br>`test_other_principal_unaffected`<br>`test_refused_scope_calls_count`<br>`test_limited_call_never_reaches_the_server`<br>`test_unauthenticated_requests_are_not_counted` |
+| AUTH-09 | high | --transport http will not start without a public key and issuer; a real HTTP server process refuses a request without a token and serves one with a valid token; a real stdio process applies ENERGY_MCP_SCOPES. | `test_http_needs_key_and_issuer`<br>`test_cli_hands_uvicorn_the_edge`<br>`test_http_process_refuses_without_token` |

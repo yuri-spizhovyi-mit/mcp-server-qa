@@ -10,11 +10,13 @@ import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx2
 import jsonschema
 from mcp import Client, StdioServerParameters
+from mcp.client.stdio import get_default_environment
 from mcp.client.streamable_http import streamable_http_client
 
 # Client(mode=...): "legacy" negotiates 2025-11-25 with initialize; "2026-07-28" pins the new revision.
@@ -41,9 +43,14 @@ class FakeClock:
         return now
 
 
-def stdio_params(*extra: str) -> StdioServerParameters:
-    """Launch `python -m energy_mcp --transport stdio` as the client's subprocess."""
-    return StdioServerParameters(command=sys.executable, args=["-m", "energy_mcp", "--transport", "stdio", *extra])
+def stdio_params(*extra: str, env: dict[str, str] | None = None) -> StdioServerParameters:
+    """Launch `python -m energy_mcp --transport stdio` as the client's subprocess.
+
+    The SDK starts it with only a safe default environment, so the test runner's own
+    ENERGY_MCP_* variables never leak in; `env` is added on top of that default.
+    """
+    return StdioServerParameters(command=sys.executable, args=["-m", "energy_mcp", "--transport", "stdio", *extra],
+                                 env=None if env is None else get_default_environment() | env)
 
 
 def free_port() -> int:
@@ -53,9 +60,13 @@ def free_port() -> int:
 
 
 @contextmanager
-def http_server(port: int, timeout: float = 20.0) -> Iterator[str]:
-    """Run `python -m energy_mcp --transport http` on port; yield its MCP URL; stop it on exit."""
-    proc = subprocess.Popen([sys.executable, "-m", "energy_mcp", "--transport", "http", "--port", str(port)],
+def http_server(port: int, *, public_key: Path, issuer: str, timeout: float = 20.0) -> Iterator[str]:
+    """Run `python -m energy_mcp --transport http` on port; yield its MCP URL; stop it on exit.
+
+    The process runs on the wall clock, so its tokens are minted with `now=time.time()`.
+    """
+    proc = subprocess.Popen([sys.executable, "-m", "energy_mcp", "--transport", "http", "--port", str(port),
+                             "--public-key", str(public_key), "--issuer", issuer],
                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
         deadline = time.monotonic() + timeout
